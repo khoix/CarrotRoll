@@ -157,8 +157,9 @@ export default function GameCanvas() {
     }
 
     // 2. Giant Carrot Logic
-    // Rolling effect: Wobble and stay at bottom
-    state.giantCarrot.x = (CANVAS_WIDTH / 2 - 100) + Math.sin(time / 500) * 100;
+    // Rolling effect: Wobble and stay at bottom, taking up entire width
+    state.giantCarrot.x = 0;
+    state.giantCarrot.width = CANVAS_WIDTH;
     state.giantCarrot.y = CANVAS_HEIGHT - 120 + Math.sin(time / 200) * 10;
     state.giantCarrot.angle += dt * 5; // Visual roll
     
@@ -291,6 +292,18 @@ export default function GameCanvas() {
     ctx.fillStyle = state.levelColor;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
+    // Scrolling background details (grass/dirt tufts)
+    ctx.fillStyle = "rgba(0,0,0,0.03)";
+    for (let i = 0; i < 5; i++) {
+        for (let j = 0; j < 6; j++) {
+            const x = (i * 200 + (j % 2 === 0 ? 50 : 150)) % CANVAS_WIDTH;
+            const y = (j * 150 + (time / 5) % 150);
+            ctx.beginPath();
+            ctx.arc(x, y, 10, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
     // Draw treadmill lines
     ctx.strokeStyle = "rgba(0,0,0,0.05)";
     ctx.lineWidth = 2;
@@ -304,30 +317,33 @@ export default function GameCanvas() {
 
     // Draw Giant Carrot
     ctx.save();
-    ctx.translate(state.giantCarrot.x + 100, state.giantCarrot.y + 100);
-    ctx.rotate(state.giantCarrot.angle);
+    ctx.translate(CANVAS_WIDTH / 2, state.giantCarrot.y + 60);
     
-    // Realistic Giant Carrot body
-    const gradient = ctx.createLinearGradient(-100, -100, 100, 100);
-    gradient.addColorStop(0, "#FB923C");
+    // Log-like roll animation (vertical shift of ridges)
+    const rollOffset = (time / 5) % 60;
+    
+    // Realistic Giant Carrot body (Log shape)
+    const gradient = ctx.createLinearGradient(0, -60, 0, 60);
+    gradient.addColorStop(0, "#EA580C");
     gradient.addColorStop(0.5, "#F97316");
     gradient.addColorStop(1, "#EA580C");
     ctx.fillStyle = gradient;
     
     ctx.beginPath();
-    ctx.moveTo(0, 120); // Tip
-    ctx.quadraticCurveTo(-80, 0, -60, -80); // Left side
-    ctx.lineTo(60, -80); // Top
-    ctx.quadraticCurveTo(80, 0, 0, 120); // Right side
+    ctx.roundRect(-CANVAS_WIDTH / 2 - 20, -60, CANVAS_WIDTH + 40, 120, 20);
     ctx.fill();
     
-    // Ridges
-    ctx.strokeStyle = "rgba(0,0,0,0.1)";
-    for(let i = -60; i < 100; i += 30) {
-        ctx.beginPath();
-        ctx.moveTo(-40, i);
-        ctx.lineTo(40, i);
-        ctx.stroke();
+    // Ridges (rolling log effect)
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 3;
+    for(let i = -120; i < 120; i += 60) {
+        const yPos = i + rollOffset - 60;
+        if (yPos > -60 && yPos < 60) {
+            ctx.beginPath();
+            ctx.moveTo(-CANVAS_WIDTH / 2, yPos);
+            ctx.lineTo(CANVAS_WIDTH / 2, yPos);
+            ctx.stroke();
+        }
     }
     ctx.restore();
 
@@ -376,20 +392,33 @@ export default function GameCanvas() {
 
     // Draw Obstacles
     state.obstacles.forEach(obj => {
-        ctx.fillStyle = obj.color;
+        ctx.save();
+        ctx.translate(obj.x + obj.width/2, obj.y + obj.height/2);
+        ctx.rotate(time / 200); // Rotate balls
+
+        const ballGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, obj.width/2);
+        ballGrad.addColorStop(0, "#4B5563");
+        ballGrad.addColorStop(1, "#111827");
+        ctx.fillStyle = ballGrad;
+
         ctx.beginPath();
-        ctx.arc(obj.x + obj.width/2, obj.y + obj.height/2, obj.width/2, 0, Math.PI * 2);
+        ctx.arc(0, 0, obj.width/2, 0, Math.PI * 2);
         ctx.fill();
-        // Spikes on ball
-        for(let i=0; i<8; i++) {
-            const angle = (i / 8) * Math.PI * 2;
-            const sx = (obj.x + obj.width/2) + Math.cos(angle) * (obj.width/2 + 5);
-            const sy = (obj.y + obj.height/2) + Math.sin(angle) * (obj.width/2 + 5);
+
+        // Realistic Spikes
+        ctx.fillStyle = "#111827";
+        for(let i=0; i<12; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            ctx.save();
+            ctx.rotate(angle);
             ctx.beginPath();
-            ctx.moveTo(obj.x + obj.width/2, obj.y + obj.height/2);
-            ctx.lineTo(sx, sy);
-            ctx.stroke();
+            ctx.moveTo(obj.width/2 - 2, -4);
+            ctx.lineTo(obj.width/2 + 10, 0);
+            ctx.lineTo(obj.width/2 - 2, 4);
+            ctx.fill();
+            ctx.restore();
         }
+        ctx.restore();
     });
 
     // Draw Player
