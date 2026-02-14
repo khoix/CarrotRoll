@@ -12,6 +12,7 @@ const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 const PLAYER_SIZE = 40;
 const BASE_SPEED = 5;
+const SCROLL_SPEED = 3;
 
 type GameObject = {
   x: number;
@@ -23,6 +24,7 @@ type GameObject = {
   vx: number;
   vy: number;
   active: boolean;
+  stunned?: number;
 };
 
 type GameState = "menu" | "playing" | "gameover" | "level_transition";
@@ -116,10 +118,17 @@ export default function GameCanvas() {
     // 1. Player Movement
     let dx = 0;
     let dy = 0;
-    if (state.keys.w || state.keys.ArrowUp) dy -= 1;
-    if (state.keys.s || state.keys.ArrowDown) dy += 1;
-    if (state.keys.a || state.keys.ArrowLeft) dx -= 1;
-    if (state.keys.d || state.keys.ArrowRight) dx += 1;
+    
+    // Automatic forward movement
+    if (!state.player.stunned || state.player.stunned <= 0) {
+        dy -= 0.5; // Constant forward urge
+        if (state.keys.w || state.keys.ArrowUp) dy -= 1;
+        if (state.keys.s || state.keys.ArrowDown) dy += 1;
+        if (state.keys.a || state.keys.ArrowLeft) dx -= 1;
+        if (state.keys.d || state.keys.ArrowRight) dx += 1;
+    } else {
+        state.player.stunned -= dt;
+    }
 
     // Normalize diagonal movement
     if (dx !== 0 || dy !== 0) {
@@ -130,6 +139,9 @@ export default function GameCanvas() {
 
     state.player.x += dx * state.player.speed;
     state.player.y += dy * state.player.speed;
+    
+    // Board scrolling effect (treadmill)
+    state.player.y += SCROLL_SPEED;
 
     // Boundaries
     state.player.x = Math.max(0, Math.min(CANVAS_WIDTH - state.player.width, state.player.x));
@@ -145,8 +157,10 @@ export default function GameCanvas() {
     }
 
     // 2. Giant Carrot Logic
-    // Wobble animation
+    // Rolling effect: Wobble and stay at bottom
     state.giantCarrot.x = (CANVAS_WIDTH / 2 - 100) + Math.sin(time / 500) * 100;
+    state.giantCarrot.y = CANVAS_HEIGHT - 120 + Math.sin(time / 200) * 10;
+    state.giantCarrot.angle += dt * 5; // Visual roll
     
     // Shooting Spikes
     state.giantCarrot.nextShot -= dt;
@@ -167,7 +181,7 @@ export default function GameCanvas() {
         state.giantCarrot.nextShot = Math.max(0.5, 2.0 - (level * 0.1)); // Shoot faster per level
     }
 
-    // 3. Falling Obstacles (Spiky Balls)
+    // 3. Falling Obstacles (Spiky Balls) - Stationary relative to board
     if (Math.random() < 0.01 + (level * 0.005)) {
         state.obstacles.push({
             x: Math.random() * CANVAS_WIDTH,
@@ -177,12 +191,12 @@ export default function GameCanvas() {
             color: "#1F2937", // Dark Gray
             type: "ball",
             vx: 0,
-            vy: 200 + (level * 30),
+            vy: SCROLL_SPEED * 60, // Moving down at treadmill speed (per second)
             active: true
         });
     }
 
-    // 4. Collectibles (Carrots)
+    // 4. Collectibles (Carrots) - Stationary relative to board
     if (state.collectibles.length < 3 + level) {
         if (Math.random() < 0.02) {
             const typeRand = Math.random();
@@ -194,42 +208,45 @@ export default function GameCanvas() {
 
             state.collectibles.push({
                 x: Math.random() * (CANVAS_WIDTH - 40),
-                y: Math.random() * (CANVAS_HEIGHT - 250), // Keep away from giant carrot
+                y: -50, // Spawn at top
                 width: 30,
                 height: 30,
                 color: color,
                 type: type,
                 vx: 0,
-                vy: 0,
+                vy: SCROLL_SPEED * 60, // Moving down at treadmill speed
                 active: true
             });
         }
     }
 
     // --- Update Entities ---
-    [...state.projectiles, ...state.obstacles].forEach(obj => {
+    [...state.projectiles, ...state.obstacles, ...state.collectibles].forEach(obj => {
         obj.x += obj.vx * dt;
         obj.y += obj.vy * dt;
         
         // Remove out of bounds
-        if (obj.y > CANVAS_HEIGHT || obj.y < -100 || obj.x < -100 || obj.x > CANVAS_WIDTH + 100) {
+        if (obj.y > CANVAS_HEIGHT + 100 || obj.y < -200 || obj.x < -100 || obj.x > CANVAS_WIDTH + 100) {
             obj.active = false;
         }
 
         // Collision with Player
         if (obj.active && !state.player.invincible && checkCollision(state.player, obj)) {
-            obj.active = false;
-            setLives(l => {
-                const newLives = l - 1;
-                if (newLives <= 0) {
-                    endGame();
-                    return 0;
-                }
-                // Temporary invincibility after hit
-                state.player.invincible = true;
-                state.player.invincibilityTimer = 1.0;
-                return newLives;
-            });
+            if (obj.type === "spike" || obj.type === "ball") {
+                obj.active = false;
+                state.player.stunned = 0.5; // Stun on hit
+                setLives(l => {
+                    const newLives = l - 1;
+                    if (newLives <= 0) {
+                        endGame();
+                        return 0;
+                    }
+                    // Temporary invincibility after hit
+                    state.player.invincible = true;
+                    state.player.invincibilityTimer = 1.0;
+                    return newLives;
+                });
+            }
         }
     });
 
@@ -270,35 +287,73 @@ export default function GameCanvas() {
     state.collectibles = state.collectibles.filter(o => o.active);
 
     // --- Render ---
-    // Background
+    // Background treadmill effect
     ctx.fillStyle = state.levelColor;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    
+    // Draw treadmill lines
+    ctx.strokeStyle = "rgba(0,0,0,0.05)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 10; i++) {
+        const lineY = (i * 100 + (time / 10) % 100);
+        ctx.beginPath();
+        ctx.moveTo(0, lineY);
+        ctx.lineTo(CANVAS_WIDTH, lineY);
+        ctx.stroke();
+    }
 
     // Draw Giant Carrot
-    ctx.fillStyle = "#F97316";
+    ctx.save();
+    ctx.translate(state.giantCarrot.x + 100, state.giantCarrot.y + 100);
+    ctx.rotate(state.giantCarrot.angle);
+    
+    // Realistic Giant Carrot body
+    const gradient = ctx.createLinearGradient(-100, -100, 100, 100);
+    gradient.addColorStop(0, "#FB923C");
+    gradient.addColorStop(0.5, "#F97316");
+    gradient.addColorStop(1, "#EA580C");
+    ctx.fillStyle = gradient;
+    
     ctx.beginPath();
-    ctx.ellipse(state.giantCarrot.x + 100, state.giantCarrot.y + 100, 100, 100, 0, 0, Math.PI * 2);
+    ctx.moveTo(0, 120); // Tip
+    ctx.quadraticCurveTo(-80, 0, -60, -80); // Left side
+    ctx.lineTo(60, -80); // Top
+    ctx.quadraticCurveTo(80, 0, 0, 120); // Right side
     ctx.fill();
-    // Face
-    ctx.fillStyle = "#000";
-    ctx.beginPath();
-    ctx.arc(state.giantCarrot.x + 70, state.giantCarrot.y + 80, 10, 0, Math.PI * 2);
-    ctx.arc(state.giantCarrot.x + 130, state.giantCarrot.y + 80, 10, 0, Math.PI * 2);
-    ctx.fill();
-    // Mouth
-    ctx.beginPath();
-    ctx.arc(state.giantCarrot.x + 100, state.giantCarrot.y + 120, 20, 0, Math.PI, false);
-    ctx.stroke();
+    
+    // Ridges
+    ctx.strokeStyle = "rgba(0,0,0,0.1)";
+    for(let i = -60; i < 100; i += 30) {
+        ctx.beginPath();
+        ctx.moveTo(-40, i);
+        ctx.lineTo(40, i);
+        ctx.stroke();
+    }
+    ctx.restore();
 
     // Draw Collectibles
     state.collectibles.forEach(obj => {
-        ctx.fillStyle = obj.color;
-        // Simple Carrot Shape
+        ctx.save();
+        ctx.translate(obj.x + obj.width/2, obj.y + obj.height/2);
+        
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, obj.width/2);
+        grad.addColorStop(0, obj.color);
+        grad.addColorStop(1, "#EA580C");
+        ctx.fillStyle = grad;
+
+        // Realistic Small Carrot
         ctx.beginPath();
-        ctx.moveTo(obj.x + obj.width/2, obj.y + obj.height);
-        ctx.lineTo(obj.x, obj.y);
-        ctx.lineTo(obj.x + obj.width, obj.y);
+        ctx.moveTo(0, obj.height/2); // Tip
+        ctx.lineTo(-obj.width/3, -obj.height/2);
+        ctx.lineTo(obj.width/3, -obj.height/2);
+        ctx.closePath();
         ctx.fill();
+        
+        // Green top
+        ctx.fillStyle = "#22C55E";
+        ctx.fillRect(-2, -obj.height/2 - 5, 4, 5);
+        
+        ctx.restore();
         
         // Glow effect for powerups
         if (obj.type !== "carrot") {
