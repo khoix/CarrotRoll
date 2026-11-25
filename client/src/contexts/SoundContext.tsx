@@ -116,7 +116,8 @@ const PRELOAD_AMBIENT: BufferAmbientId[] = ["rapid_rabbit_loop", "attract_loop"]
 
 const MUSIC_FILES: Record<Exclude<MusicState, "playing">, string> = {
   menu: "music_menu.m4a",
-  gameover: "music_gameover.m4a",
+  // No dedicated game-over track exists yet (the old demo file was a placeholder beep loop).
+  gameover: "music_menu.m4a",
 };
 
 /** In-game music tracks, played in order; after the last, playback wraps to the first. */

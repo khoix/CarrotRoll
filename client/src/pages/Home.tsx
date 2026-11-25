@@ -103,7 +103,6 @@ export default function Home() {
 
   // On mobile, when returning from Play (Back to menu / submit score), skip title and show main menu
   useEffect(() => {
-    if (!isMobile) return;
     if (sessionStorage.getItem("carrotroll_skip_title")) {
       sessionStorage.removeItem("carrotroll_skip_title");
       setShowTitleScreen(false);

@@ -56,8 +56,6 @@ console.log("Audio:");
 for (const name of MUSIC) {
   job(path.join(SRC, "sounds", `${name}.wav`), path.join(OUT, "sounds", `${name}.m4a`), AAC);
 }
-// Game-over music was only ever shipped in the demo set; use it as the real track.
-job(path.join(SRC, "sounds", "demo", "music_gameover.wav"), path.join(OUT, "sounds", "music_gameover.m4a"), AAC);
 
 // --- Endgame slideshow ---
 console.log("Endgame slides:");
