@@ -83,6 +83,8 @@ export interface MechanicDef {
 export const MECHANICS: MechanicDef[] = [
   { id: "near_miss", name: "Near Miss", blurb: "Skim past a hazard without touching it for +5.", unlockLevel: 2 },
   { id: "combo", name: "Carrot Combo", blurb: "Grab carrots quickly to multiply points, up to x5.", unlockLevel: 4 },
+  { id: "boss", name: "Boss Fight!", blurb: "No carrots. Blast it or bounce broccoli back to drain its health, or survive 30 s.", unlockLevel: 5 },
+  { id: "power_combos", name: "Power-up Combos", blurb: "Shield + Rapid Rabbit = Turbo Shield. Blasters + Attract-o-Hare = Magnet Lasers.", unlockLevel: 18 },
 ];
 
 export function mechanicUnlocked(id: string, level: number): boolean {

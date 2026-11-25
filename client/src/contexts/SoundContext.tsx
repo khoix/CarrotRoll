@@ -99,7 +99,11 @@ export type SfxId =
   | "powerup_rain"
   | "powerup_shrink"
   | "powerup_double"
-  | "reflect";
+  | "reflect"
+  | "boss_warning"
+  | "boss_hit"
+  | "boss_defeat"
+  | "combo_power";
 
 /** Gapless looping beds. `golden_bunny_loop` is a full music track, handled as a music override. */
 export type AmbientId = "rapid_rabbit_loop" | "attract_loop" | "golden_bunny_loop" | "static_endgame";
@@ -137,6 +141,10 @@ const SFX_FILES: Record<SfxId, string> = {
   powerup_shrink: "powerup_shrink.wav",
   powerup_double: "powerup_double.wav",
   reflect: "reflect.wav",
+  boss_warning: "boss_warning.wav",
+  boss_hit: "boss_hit.wav",
+  boss_defeat: "boss_defeat.wav",
+  combo_power: "combo_power.wav",
 };
 
 const AMBIENT_FILES: Record<BufferAmbientId, string> = {
@@ -179,6 +187,7 @@ const SFX_THROTTLE_MS: Partial<Record<SfxId, number>> = {
   sprout_pop: 80,
   icicle: 120,
   reflect: 80,
+  boss_hit: 110,
 };
 const MAX_VOICES_PER_SFX = 4;
 const MAX_VOICES_TOTAL = 16;

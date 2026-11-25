@@ -45,10 +45,10 @@ export default function Level20Demo() {
 
       <div className="flex-none p-4 flex items-center justify-between gap-4 border-b border-black/10 bg-white/80">
         <h1 className="font-display text-xl text-gray-900">
-          Endgame Demo — Level {FINAL_LEVEL - 1}
+          Endgame Demo — Level {FINAL_LEVEL} (final boss)
         </h1>
         <p className="text-sm text-gray-500 hidden sm:block">
-          Complete level {FINAL_LEVEL - 1} to trigger the ending sequence.
+          Beat (or survive) the final boss to trigger the ending sequence.
         </p>
         <Button
           onClick={() => setLocation("/")}
@@ -64,7 +64,7 @@ export default function Level20Demo() {
         <GameCanvas
           ref={gameCanvasRef}
           autoStart
-          initialLevel={FINAL_LEVEL - 1}
+          initialLevel={FINAL_LEVEL}
           onStateChange={setGameState}
           onReturnToMenu={() => setLocation("/")}
           onSoundUnlock={enableSound}

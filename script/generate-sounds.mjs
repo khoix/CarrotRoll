@@ -253,6 +253,13 @@ sfx.push(
   ["reflect", () => sweep(700, 1600, 0.09, 0.2)],
 );
 
+sfx.push(
+  ["boss_warning", () => [...sweep(300, 600, 0.35, 0.28), ...sweep(300, 600, 0.35, 0.28), ...sweep(300, 600, 0.35, 0.28)]],
+  ["boss_hit", () => [...noise(0.08, 0.5, 0.002, 0.3, 23), ...tone(110, 0.08, 0.25)]],
+  ["boss_defeat", () => arpeggio([523, 659, 784, 1047, 784, 1047, 1319], 0.11, 0.26)],
+  ["combo_power", () => arpeggio([784, 1175, 1568], 0.07, 0.24)],
+);
+
 const ambient = [
   // Rapid Rabbit: bright, fast-pulsing whir
   ["rapid_rabbit_loop", () => seamlessLoop(2, [

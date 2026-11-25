@@ -117,3 +117,35 @@ export function hazardRate(level: number, pick: (r: TierRates) => Range | undefi
   const step = (level - 1) % LEVELS_PER_TIER; // 0, 1, 2…
   return value * Math.min(1, 0.35 + step * 0.325);
 }
+
+// ---------------------------------------------------------------------------
+// Bosses: the last level of each tier
+// ---------------------------------------------------------------------------
+
+export type BossPattern = "fan" | "spiral" | "wall" | "aimed" | "sprouts" | "icicle_sweep" | "lightning_rows" | "cauli_volley" | "meteor_shower";
+
+export interface BossDef {
+  name: string;
+  hp: number;
+  patterns: BossPattern[];
+}
+
+/** One boss per tier, in tier order. */
+export const BOSSES: BossDef[] = [
+  { name: "Broccoli Barrage", hp: 40, patterns: ["fan", "spiral"] },
+  { name: "Sprout Storm", hp: 55, patterns: ["wall", "sprouts"] },
+  { name: "Blizzard", hp: 70, patterns: ["icicle_sweep", "aimed"] },
+  { name: "Thunderhead", hp: 85, patterns: ["lightning_rows", "cauli_volley"] },
+  { name: "The Carrot King", hp: 120, patterns: ["fan", "wall", "icicle_sweep", "lightning_rows", "cauli_volley", "meteor_shower", "spiral"] },
+];
+
+/** Seconds a boss fight lasts if you just survive it. */
+export const BOSS_SURVIVE_S = 30;
+
+export function isBossLevel(level: number): boolean {
+  return level % LEVELS_PER_TIER === 0;
+}
+
+export function bossForLevel(level: number): BossDef {
+  return BOSSES[tierIndexForLevel(level)];
+}

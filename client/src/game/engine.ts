@@ -20,7 +20,7 @@ import {
   pickCollectible,
   type CollectibleType,
 } from "./content";
-import { TIERS, hazardRate, tierIndexForLevel, tierForLevel, tierProgress, lerpRange } from "./tiers";
+import { TIERS, BOSS_SURVIVE_S, bossForLevel, hazardRate, isBossLevel, tierIndexForLevel, tierForLevel, tierProgress, lerpRange, type BossDef, type BossPattern } from "./tiers";
 
 export const BASE_W = 800;
 export const BASE_H = 600;
@@ -113,7 +113,24 @@ export type Wind = { dir: -1 | 1; warnAt: number; start: number; end: number; st
 export type Phase = "idle" | "countdown" | "playing" | "over" | "ending";
 
 /** combo = current multiplier (1 = none); comboChain changes on every combo pickup (restarts the HUD timer). */
-export type HudState = { score: number; level: number; carrots: number; lives: number; combo: number; comboChain: number };
+export type HudState = { score: number; level: number; carrots: number; lives: number; combo: number; comboChain: number; boss: boolean };
+
+/** A boss fight in progress (times in ms, sim clock). */
+export type BossState = {
+  def: BossDef;
+  hp: number;
+  start: number;
+  patIdx: number;
+  patStart: number;
+  nextFire: number;
+  phase: number;
+  /** Last time it took damage (for the hit flash). */
+  hitAt: number;
+  done: boolean;
+};
+
+const BOSS_PATTERN_MS = 2600;
+const BOSS_REST_MS = 700;
 
 export type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string; gravity: number };
 export type Popup = { x: number; y: number; text: string; start: number; color: string; big?: boolean };
@@ -249,7 +266,10 @@ export class GameEngine {
   private rapidOn = false;
   private attractOn = false;
   private goldenOn = false;
-  private lastHud: HudState = { score: -1, level: -1, carrots: -1, lives: -1, combo: -1, comboChain: -1 };
+  private lastHud: HudState = { score: -1, level: -1, carrots: -1, lives: -1, combo: -1, comboChain: -1, boss: false };
+  boss: BossState | null = null;
+  /** Which power-up combos are active (for visuals and the one-time popup). */
+  combos = { turbo: false, magnet: false };
 
   constructor(private events: EngineEvents) {}
 
@@ -314,6 +334,8 @@ export class GameEngine {
     this.wind = null;
     this.decoy = null;
     this.flash = 0;
+    this.boss = null;
+    this.combos = { turbo: false, magnet: false };
     this.nextGustAt = Infinity;
     this.tierIndex = -1;
     this.projectiles = [];
@@ -363,6 +385,15 @@ export class GameEngine {
         this.events.announce?.({ kind: "tier", title: `Tier ${tier.n} · ${tier.theme.name}`, body: tier.newHazards.length ? `New: ${tier.newHazards.join(" and ")}` : undefined });
       }
     }
+    // Boss fights close each tier
+    this.boss = null;
+    if (isBossLevel(this.level)) {
+      const def = bossForLevel(this.level);
+      this.boss = { def, hp: def.hp, start: startTime, patIdx: 0, patStart: startTime + 1200, nextFire: startTime + 1200, phase: 0, hitAt: -Infinity, done: false };
+      this.events.announce?.({ kind: "boss", title: def.name, body: `Boss! Drain its health or survive ${BOSS_SURVIVE_S} s` });
+      this.events.sfx("boss_warning");
+      this.giantCarrot.face = 3;
+    }
     const gust = tierForLevel(this.level).rates.gustEvery;
     this.nextGustAt = gust ? startTime + lerpRange(gust, tierProgress(this.level)) * 1000 * (0.6 + this.rng() * 0.6) : Infinity;
     if (!gust) this.wind = null;
@@ -387,7 +418,8 @@ export class GameEngine {
   }
 
   setLevel(n: number) {
-    this.level = Math.max(1, Math.min(FINAL_LEVEL - 1, Math.floor(n)));
+    this.level = Math.max(1, Math.min(FINAL_LEVEL, Math.floor(n)));
+    this.carrots = 0;
     this.beginLevel(this.time);
     this.emitHud();
   }
@@ -548,6 +580,10 @@ export class GameEngine {
       gc.angle += dt * 5;
       gc.nextShot -= worldDt;
       if (gc.nextShot <= 0 && p.rainTimer > 0) gc.nextShot = 0.3; // Carrot Rain: the carrot holds fire
+      if (this.boss) {
+        gc.nextShot = 1; // the boss uses its attack patterns instead
+        if (!isCountdown) this.updateBoss(t);
+      }
       if (gc.nextShot <= 0) {
         const margin = 40;
         const sourceX = gc.x + margin + this.rng() * (gc.width - 2 * margin);
@@ -674,7 +710,9 @@ export class GameEngine {
       const LASER_W = 2;
       const LASER_H = 54;
       for (const sign of [-1, 1]) {
-        this.projectiles.push({ x: cx + sign * 14 - LASER_W / 2, y: cy - LASER_H / 2, width: LASER_W, height: LASER_H, type: "player_laser", vx: 0, vy: -1050 * vS, active: true });
+        // In boss fights the bunny fires down at the giant carrot
+        const down = !!this.boss;
+        this.projectiles.push({ x: cx + sign * 14 - LASER_W / 2, y: (down ? p.y + p.height : cy) - LASER_H / 2, width: LASER_W, height: LASER_H, type: "player_laser", vx: 0, vy: (down ? 1 : -1) * 1050 * vS, active: true });
       }
       this.events.sfx("blaster_shoot");
     }
@@ -689,11 +727,11 @@ export class GameEngine {
       }
     }
     // Spiky balls (and, from tier 2, chestnut burrs)
-    if (p.rainTimer <= 0 && this.rng() < perStep(diff.ballChance, dt, Math.sqrt(this.widthScale))) {
+    if (p.rainTimer <= 0 && this.rng() < perStep(diff.ballChance * (this.boss ? 0.4 : 1), dt, Math.sqrt(this.widthScale))) {
       const burr = this.rng() < hazardRate(this.level, (r) => r.burrShare);
       this.obstacles.push({ x: this.rng() * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: burr ? "burr" : "ball", vx: 0, vy: fall, active: true, hp: burr ? 1 : undefined });
     }
-    this.updateTierHazards(dt, t, p.rainTimer <= 0);
+    this.updateTierHazards(dt, t, p.rainTimer <= 0, this.boss ? 0.4 : 1);
 
     // Guaranteed first spawn of anything that unlocks on this level
     if (this.pendingUnlocks.length && t >= this.nextUnlockSpawn) {
@@ -705,10 +743,15 @@ export class GameEngine {
     // Collectibles arrive at the same rate on every screen shape (narrow phones aren't starved of carrots)
     if (this.collectibles.length < diff.collectibleCap && this.rng() < perStep(0.02, dt, Math.pow(this.widthScale, 0.25))) {
       let pick = pickCollectible(this.level, this.rng);
+      if (this.boss) {
+        // Boss fights: no carrots; power-ups still drop now and then
+        if (pick.startsWith("carrot") || pick === "powerup_rain") pick = this.rng() < 0.35 ? "powerup_blaster" : "powerup_invincible";
+        if (this.rng() > 0.35) pick = "carrot_none" as CollectibleType;
+      }
       if (pick === "powerup_bomb" && this.bombThisLevel) pick = "carrot"; // one bomb per level at most
       if (pick === "powerup_slowmo" && p.slowTimer > 0) pick = "carrot";
       if (pick === "powerup_bomb") this.bombThisLevel = true;
-      this.spawnCollectible(pick);
+      if ((pick as string) !== "carrot_none") this.spawnCollectible(pick);
     }
 
     // Move entities
@@ -849,6 +892,69 @@ export class GameEngine {
           }
         }
         break;
+      }
+    }
+
+    // Power-up combos (from L18): two compatible power-ups at once merge into something stronger
+    if (mechanicUnlocked("power_combos", this.level)) {
+      const turbo = p.shieldTimer > 0 && p.speedBoostTimer > 0;
+      const magnet = p.blasterTimer > 0 && p.attractTimer > 0;
+      if (turbo && !this.combos.turbo) this.announceCombo("TURBO SHIELD!");
+      if (magnet && !this.combos.magnet) this.announceCombo("MAGNET LASERS!");
+      this.combos = { turbo, magnet };
+      const pcx = p.x + p.width / 2;
+      const pcy = p.y + p.height / 2;
+      if (turbo) {
+        // Turbo Shield: hazards near the bunny are flung away
+        for (const arr of [this.projectiles, obs]) {
+          for (const o of arr) {
+            if (!o.active || o.reflected || !HARMFUL.has(o.type)) continue;
+            const dx = o.x + o.width / 2 - pcx;
+            const dy = o.y + o.height / 2 - pcy;
+            const d = Math.hypot(dx, dy) || 1;
+            if (d > 80) continue;
+            const v = 520 * vS;
+            o.vx = (dx / d) * v;
+            o.vy = (dy / d) * v;
+          }
+        }
+      }
+      if (magnet) {
+        // Magnet Lasers: lasers curve toward the nearest thing they can destroy
+        for (const proj of this.projectiles) {
+          if (!proj.active || proj.type !== "player_laser") continue;
+          let best: Entity | null = null;
+          let bd = 260;
+          for (const o of [...obs, ...this.projectiles]) {
+            if (!o.active || !BLASTABLE.has(o.type)) continue;
+            const d = Math.hypot(o.x + o.width / 2 - proj.x, o.y + o.height / 2 - proj.y);
+            if (d < bd) {
+              bd = d;
+              best = o;
+            }
+          }
+          if (!best) continue;
+          const v = Math.hypot(proj.vx, proj.vy);
+          const want = Math.atan2(best.y + best.height / 2 - proj.y, best.x + best.width / 2 - proj.x);
+          const cur = Math.atan2(proj.vy, proj.vx);
+          let d = want - cur;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          const a = cur + Math.max(-6 * dt, Math.min(6 * dt, d));
+          proj.vx = Math.cos(a) * v;
+          proj.vy = Math.sin(a) * v;
+        }
+      }
+    }
+
+    // Boss fights: downward lasers that reach the giant carrot damage it
+    if (this.boss) {
+      for (const proj of this.projectiles) {
+        if (!proj.active || proj.type !== "player_laser" || proj.vy <= 0) continue;
+        if (proj.y + proj.height < this.giantCarrot.y + 12) continue;
+        proj.active = false;
+        this.burst(proj.x, this.giantCarrot.y + 12, 3, ["#fde68a", "#fb923c"], 90);
+        this.damageBoss(1, t);
       }
     }
 
@@ -1052,6 +1158,175 @@ export class GameEngine {
   /** A reflected shot hit the giant carrot (bosses take damage from this in boss fights). */
   protected onReflectedHit() {
     this.giantCarrot.face = 3;
+    if (this.boss) this.damageBoss(3, this.time);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bosses
+  // ---------------------------------------------------------------------------
+
+  private damageBoss(n: number, t: number) {
+    const b = this.boss;
+    if (!b || b.done) return;
+    b.hp = Math.max(0, b.hp - n);
+    if (t - b.hitAt > 120) this.events.sfx("boss_hit");
+    b.hitAt = t;
+    if (b.hp <= 0) this.finishBoss(true, t);
+  }
+
+  /** Point the carrot's attacks at (the decoy if one stands, else the bunny). */
+  private aimPoint() {
+    const p = this.player;
+    return this.decoy ? { x: this.decoy.x, y: this.decoy.y } : { x: p.x + p.width / 2, y: p.y + p.height / 2 };
+  }
+
+  private fireShot(type: "spike" | "sprout" | "sprout_small" | "cauliflower", x: number, angle: number, speed: number) {
+    const size = type === "cauliflower" ? 56 : type === "sprout" ? 26 : type === "sprout_small" ? 16 : 40;
+    const y = this.giantCarrot.y;
+    this.projectiles.push({
+      x: x - size / 2,
+      y: y - size / 2,
+      width: size,
+      height: size,
+      type,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      active: true,
+      angle: 0,
+      ...(type === "cauliflower" && { hp: 2 }),
+      ...(type === "sprout" && { born: this.time }),
+    });
+  }
+
+  private spawnMeteor() {
+    const W = this.W;
+    const vS = this.vScale;
+    const fromLeft = this.rng() < 0.5;
+    const ang = Math.PI / 2 + (fromLeft ? -1 : 1) * (0.45 + this.rng() * 0.25);
+    const v = 520 * vS;
+    const x = fromLeft ? this.rng() * W * 0.4 : W * 0.6 + this.rng() * W * 0.4;
+    const lead = 0.5;
+    this.obstacles.push({ x: x - 15 - Math.cos(ang) * v * lead, y: -30 - Math.sin(ang) * v * lead, width: 30, height: 30, type: "meteor", vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, active: true, angle: ang });
+  }
+
+  /** Run the boss's current attack pattern; patterns cycle with a short rest between them. */
+  private updateBoss(t: number) {
+    const b = this.boss!;
+    if (b.done) return;
+    if ((t - b.start) / 1000 >= BOSS_SURVIVE_S) {
+      this.finishBoss(false, t);
+      return;
+    }
+    if (t < b.patStart) return;
+    if (t - b.patStart > BOSS_PATTERN_MS) {
+      b.patIdx = (b.patIdx + 1) % b.def.patterns.length;
+      b.patStart = t + BOSS_REST_MS;
+      b.nextFire = b.patStart;
+      b.phase = 0;
+      return;
+    }
+    if (t < b.nextFire) return;
+    const pattern: BossPattern = b.def.patterns[b.patIdx];
+    const W = this.W;
+    const speed = difficulty(this.level).shotSpeed * this.vScale;
+    const cx = W / 2;
+    const aim = this.aimPoint();
+    const aimFrom = (x: number) => Math.atan2(aim.y - this.giantCarrot.y, aim.x - x);
+    switch (pattern) {
+      case "fan": {
+        const base = aimFrom(cx);
+        for (let i = -3; i <= 3; i++) this.fireShot("spike", cx, base + i * 0.2, speed * 0.75);
+        this.events.sfx("carrot_shoot");
+        b.nextFire = t + 900;
+        break;
+      }
+      case "spiral": {
+        const a = -Math.PI / 2 + Math.sin(b.phase) * 1.15;
+        this.fireShot("spike", cx, a, speed * 0.7);
+        b.phase += 0.33;
+        b.nextFire = t + 95;
+        break;
+      }
+      case "wall": {
+        const gapW = 130;
+        const gapX = 40 + this.rng() * (W - 80 - gapW);
+        for (let x = 12; x < W; x += 34) if (x < gapX || x > gapX + gapW) this.fireShot("sprout_small", x, -Math.PI / 2, speed * 0.5);
+        this.events.sfx("carrot_shoot");
+        b.nextFire = t + 1300;
+        break;
+      }
+      case "sprouts": {
+        const x = 60 + this.rng() * (W - 120);
+        this.fireShot("sprout", x, aimFrom(x), speed * 0.85);
+        b.nextFire = t + 450;
+        break;
+      }
+      case "aimed": {
+        const x = 40 + this.rng() * (W - 80);
+        this.fireShot("spike", x, aimFrom(x), speed);
+        b.nextFire = t + 420;
+        break;
+      }
+      case "icicle_sweep": {
+        // Columns sweep across the screen one after another, leaving one gap
+        const step = 64;
+        const n = Math.ceil(W / step);
+        const gap = Math.floor(this.rng() * n);
+        for (let i = 0; i < n; i++) {
+          if (i === gap || i === gap + 1) continue;
+          const dir = b.phase % 2 === 0 ? i : n - 1 - i;
+          this.strikes.push({ kind: "icicle", x: dir * step + step / 2, w: 26, warnUntil: t + 700 + i * 110, endAt: t + 700 + i * 110 });
+        }
+        b.phase++;
+        b.nextFire = t + 2200;
+        break;
+      }
+      case "lightning_rows": {
+        const k = 4;
+        const off = b.phase % 2 === 0 ? 0.25 : 0.75;
+        for (let i = 0; i < k; i++) {
+          const x = ((i + off) / k) * W;
+          this.strikes.push({ kind: "lightning", x, w: 44, warnUntil: t + 900, endAt: t + 1150 });
+        }
+        b.phase++;
+        b.nextFire = t + 1400;
+        break;
+      }
+      case "cauli_volley": {
+        const base = aimFrom(cx);
+        for (const d of [-0.3, 0, 0.3]) this.fireShot("cauliflower", cx, base + d, speed * 0.55);
+        this.events.sfx("carrot_shoot");
+        b.nextFire = t + 1300;
+        break;
+      }
+      case "meteor_shower": {
+        this.spawnMeteor();
+        b.nextFire = t + 320;
+        break;
+      }
+    }
+  }
+
+  /** The boss is beaten (or survived): bonus, clear the field, next level (or the ending). */
+  private finishBoss(defeated: boolean, t: number) {
+    const b = this.boss!;
+    b.done = true;
+    const tier = tierIndexForLevel(this.level) + 1;
+    const bonus = (defeated ? 1000 : 300) * tier;
+    this.events.sfx(defeated ? "boss_defeat" : "level_up");
+    this.addScore(bonus, this.W / 2, this.H * 0.45, true, defeated ? `${b.def.name} DEFEATED! +${bonus}` : `SURVIVED! +${bonus}`);
+    for (const arr of [this.projectiles, this.obstacles]) for (const o of arr) if (HARMFUL.has(o.type)) o.active = false;
+    this.strikes = [];
+    this.flash = 300;
+    if (defeated) for (let i = 0; i < 6; i++) this.explosions.push({ x: (this.W * (i + 0.5)) / 6, y: this.giantCarrot.y + 30, start: t + i * 80, dur: 500 });
+    this.boss = null;
+    this.levelUp();
+  }
+
+  private announceCombo(name: string) {
+    const p = this.player;
+    this.events.sfx("combo_power");
+    this.pushPopup({ x: p.x + p.width / 2, y: p.y - 24, text: name, start: this.time, color: "#facc15", big: true });
   }
 
   /** Resize the bunny around its centre (Shrinking Violet). */
@@ -1081,6 +1356,7 @@ export class GameEngine {
     this.flash = 350;
     this.shake = 350;
     this.shakeStrength = 9;
+    if (this.boss) this.damageBoss(10, t);
     if (n) this.addScore(5 * n, this.player.x + this.player.width / 2, this.player.y - 10, true, `BOOM! +${5 * n}`);
   }
 
@@ -1096,6 +1372,10 @@ export class GameEngine {
       this.wind.end += ms;
     }
     if (Number.isFinite(this.nextGustAt)) this.nextGustAt += ms;
+    if (this.boss) {
+      this.boss.patStart += ms;
+      this.boss.nextFire += ms;
+    }
   }
 
   /** Double Trouble's ghost: the bunny mirrored across the playfield. */
@@ -1142,12 +1422,12 @@ export class GameEngine {
    * Tier hazards that aren't plain falling balls: Brussels sprouts bursting, homing beets,
    * icicle and lightning columns, meteor radishes and snow gusts.
    */
-  private updateTierHazards(dt: number, t: number, allowSpawns = true) {
+  private updateTierHazards(dt: number, t: number, allowSpawns = true, rateScale = 1) {
     const p = this.player;
     const W = this.W;
     const vS = this.vScale;
     const fall = this.fallSpeed;
-    const chance = (rate: number) => allowSpawns && rate > 0 && this.rng() < 1 - Math.exp(-rate * dt);
+    const chance = (rate: number) => allowSpawns && rate > 0 && this.rng() < 1 - Math.exp(-rate * rateScale * dt);
 
     // Brussels sprouts burst into three small sprouts shortly after leaving the carrot
     for (const o of this.projectiles) {
@@ -1307,7 +1587,7 @@ export class GameEngine {
   private levelUp() {
     this.stats.levelTimes.push((this.time - this.stats.levelStart) / 1000);
     this.stats.levelStart = this.time;
-    if (this.level >= FINAL_LEVEL - 1) {
+    if (this.level >= FINAL_LEVEL) {
       this.stopAllLoops();
       this.level = FINAL_LEVEL;
       this.carrots = 0;
@@ -1410,8 +1690,9 @@ export class GameEngine {
     const h = this.lastHud;
     const combo = this.comboMult;
     const chain = combo > 1 ? this.comboChain : 0;
-    if (!force && h.score === this.score && h.level === this.level && h.carrots === this.carrots && h.lives === this.lives && h.combo === combo && h.comboChain === chain) return;
-    this.lastHud = { score: this.score, level: this.level, carrots: this.carrots, lives: this.lives, combo, comboChain: chain };
+    const boss = !!this.boss;
+    if (!force && h.score === this.score && h.level === this.level && h.carrots === this.carrots && h.lives === this.lives && h.combo === combo && h.comboChain === chain && h.boss === boss) return;
+    this.lastHud = { score: this.score, level: this.level, carrots: this.carrots, lives: this.lives, combo, comboChain: chain, boss };
     this.events.hud({ ...this.lastHud });
   }
 

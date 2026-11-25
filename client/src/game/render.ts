@@ -7,7 +7,7 @@ import { HazeLayer } from "@/lib/HazeLayer";
 import { drawEarthBackground } from "@/lib/drawEarthBackground";
 import { SpriteCache, blit, drawCarrotFace, drawRabbit, type PowerupType } from "./art";
 import { ATTRACT_FADE_THRESHOLD, COUNTDOWN_MS, type GameEngine } from "./engine";
-import type { ParticleKind, TierTheme } from "./tiers";
+import { BOSS_SURVIVE_S, type ParticleKind, type TierTheme } from "./tiers";
 
 const CROSSFADE_S = 2;
 
@@ -261,8 +261,40 @@ export class Renderer {
       ctx.stroke();
     }
     ctx.restore();
+    // Boss: the carrot flashes red when hit
+    if (e.boss && time - e.boss.hitAt < 120) {
+      ctx.fillStyle = "rgba(239, 68, 68, 0.45)";
+      ctx.beginPath();
+      ctx.roundRect(-W / 2 - 20, -60, W + 40, 120, 20);
+      ctx.fill();
+    }
     drawCarrotFace(ctx, e.giantCarrot.face ?? 0, 0, 0, 58);
     ctx.restore();
+
+    // Boss health bar and survival countdown, just above the carrot
+    if (e.boss) {
+      const b = e.boss;
+      const bw = Math.min(W * 0.7, 420);
+      const bx = (W - bw) / 2;
+      const by = e.giantCarrot.y - 34;
+      ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
+      ctx.beginPath();
+      ctx.roundRect(bx - 4, by - 18, bw + 8, 34, 8);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(bx, by, bw, 10);
+      const k = b.hp / b.def.hp;
+      ctx.fillStyle = k > 0.5 ? "#22c55e" : k > 0.25 ? "#f59e0b" : "#ef4444";
+      ctx.fillRect(bx, by, bw * k, 10);
+      ctx.font = "13px Bangers, system-ui, sans-serif";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "left";
+      ctx.fillText(b.def.name.toUpperCase(), bx + 2, by - 4);
+      const left = Math.max(0, BOSS_SURVIVE_S - (time - b.start) / 1000);
+      ctx.textAlign = "right";
+      ctx.fillText(`SURVIVE ${Math.ceil(left)}s`, bx + bw - 2, by - 4);
+    }
 
     // --- Column warnings and lightning ---
     for (const st of e.strikes) {
@@ -365,7 +397,7 @@ export class Renderer {
       if (o.type === "player_laser") {
         const h = o.height;
         ctx.lineCap = "round";
-        ctx.strokeStyle = "rgba(103, 232, 249, 0.35)";
+        ctx.strokeStyle = e.combos.magnet ? "rgba(244, 114, 182, 0.45)" : "rgba(103, 232, 249, 0.35)";
         ctx.lineWidth = 7;
         ctx.beginPath();
         ctx.moveTo(cx, cy - h / 2);
@@ -582,6 +614,13 @@ export class Renderer {
       if (shieldFlicker) ctx.globalAlpha = prevA * (0.5 + Math.sin(time / 70) * 0.5);
       const bubblePulse = 1 + Math.sin(time / 120) * 0.04;
       blit(ctx, S.shield, cx, cy, 0.92 * bubblePulse);
+      if (e.combos.turbo) {
+        ctx.strokeStyle = "rgba(250, 204, 21, 0.9)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 44 + Math.sin(time / 60) * 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.globalAlpha = prevA;
     }
 
