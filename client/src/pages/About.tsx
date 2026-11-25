@@ -2,7 +2,7 @@ import { Link } from "wouter";
 
 export default function About() {
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-orange-100 via-orange-50 to-white p-4 md:p-8">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-orange-100 via-orange-50 to-white p-4 md:p-8 safe-area-pad-top">
       <div className="max-w-2xl mx-auto py-12">
         <div className="bg-white rounded-3xl border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-8 md:p-10">
           <h1 className="font-display text-4xl text-gray-900 mb-2">About Carrot Roll</h1>
