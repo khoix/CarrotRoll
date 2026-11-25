@@ -67,6 +67,8 @@ type GameState = "menu" | "countdown" | "playing" | "gameover" | "level_transiti
 /** Portrait world: fixed width, height grows with the screen (difficulty is scaled to match). */
 const PORTRAIT_W = 600;
 const PORTRAIT_MAX_H = 1400;
+/** Touch devices in full-viewport mode see the game 1.25× larger (the world is shrunk to match). */
+const MOBILE_ZOOM = 1.25;
 
 // --- Adaptive quality ---
 const QUALITY_KEY = "carrotroll_quality";
@@ -142,6 +144,8 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
 
     const isMobile = useIsMobile();
     const coarse = useCoarsePointer();
+    const coarseRef = useRef(coarse);
+    coarseRef.current = coarse;
     const [gameState, setGameState] = useState<GameState>("menu");
     const gameStateRef = useRef<GameState>("menu");
     gameStateRef.current = gameState;
@@ -310,11 +314,12 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
       const ch = container.clientHeight;
       if (cw <= 0 || ch <= 0) return;
 
-      let W = BASE_W;
-      let H = BASE_H;
+      const zoom = fillViewport && coarseRef.current ? MOBILE_ZOOM : 1;
+      let W = Math.round(BASE_W / zoom);
+      let H = Math.round(BASE_H / zoom);
       if (fillViewport && cw / ch < 1) {
-        W = PORTRAIT_W;
-        H = Math.round(Math.max(BASE_H, Math.min(PORTRAIT_MAX_H, PORTRAIT_W / (cw / ch))));
+        W = Math.round(PORTRAIT_W / zoom);
+        H = Math.round(Math.max(BASE_H / zoom, Math.min(PORTRAIT_MAX_H / zoom, W / (cw / ch))));
       }
       const fit = Math.min(cw / W, ch / H);
       const cssW = Math.floor(W * fit);
@@ -363,6 +368,11 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
         if (bez.height !== lh) bez.height = lh;
       }
     }, [fillViewport, setPaused]);
+
+    // Pointer type can resolve after first layout (e.g. hydration); re-fit when it changes.
+    useEffect(() => {
+      applyLayout();
+    }, [coarse, applyLayout]);
 
     useLayoutEffect(() => {
       const container = containerRef.current;
