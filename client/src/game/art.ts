@@ -501,6 +501,8 @@ export function blit(ctx: CanvasRenderingContext2D, s: Sprite, x: number, y: num
 export class SpriteCache {
   readonly scale: number;
   carrots: Sprite[] = [];
+  goldenCarrots: Sprite[] = [];
+  rottenCarrot: Sprite | null = null;
   broccoli: Sprite | null = null;
   ball: Sprite | null = null;
   powerups: Partial<Record<PowerupType, Sprite>> = {};
@@ -609,7 +611,34 @@ export class SpriteCache {
           if (carrot) c.drawImage(carrot, 0, 0, 40, 40);
           drawCarrotFace(c, face, 20, 20 + 40 * 0.08, 27, true);
         });
+        // Golden: the same carrot washed in gold with a bright rim
+        this.goldenCarrots[face] = makeSprite(48, 48, scale, 24, 24, (c) => {
+          c.translate(4, 4);
+          if (carrot) c.drawImage(carrot, 0, 0, 40, 40);
+          c.globalCompositeOperation = "source-atop";
+          const g = c.createLinearGradient(0, 0, 40, 40);
+          g.addColorStop(0, "rgba(255, 245, 157, 0.85)");
+          g.addColorStop(0.5, "rgba(250, 204, 21, 0.75)");
+          g.addColorStop(1, "rgba(202, 138, 4, 0.8)");
+          c.fillStyle = g;
+          c.fillRect(0, 0, 40, 40);
+          c.globalCompositeOperation = "source-over";
+          drawCarrotFace(c, face, 20, 20 + 40 * 0.08, 27, true);
+        });
       }
+      // Rotten: browned, droopy-faced carrot (the flies are drawn live)
+      this.rottenCarrot = makeSprite(40, 40, scale, 20, 20, (c) => {
+        if (carrot) c.drawImage(carrot, 0, 0, 40, 40);
+        c.globalCompositeOperation = "source-atop";
+        const g = c.createLinearGradient(0, 0, 0, 40);
+        g.addColorStop(0, "rgba(77, 124, 15, 0.35)");
+        g.addColorStop(0.45, "rgba(120, 83, 35, 0.45)");
+        g.addColorStop(1, "rgba(68, 50, 20, 0.7)");
+        c.fillStyle = g;
+        c.fillRect(0, 0, 40, 40);
+        c.globalCompositeOperation = "source-over";
+        drawCarrotFace(c, 4, 20, 20 + 40 * 0.08, 27, true);
+      });
       if (imgs.broccoli) { const b = imgs.broccoli; this.broccoli = makeSprite(40, 40, scale, 20, 20, (c) => c.drawImage(b, 0, 0, 40, 40)); }
       if (imgs.ball) { const b = imgs.ball; this.ball = makeSprite(40, 40, scale, 20, 20, (c) => c.drawImage(b, 0, 0, 40, 40)); }
     });

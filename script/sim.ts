@@ -51,6 +51,8 @@ const RADII = [45, 100, 170];
 /** Value of each collectible to the bot (0 = ignore, negative = avoid). */
 function pickupValue(type: string, e: GameEngine): number {
   if (type === "carrot") return 1;
+  if (type === "carrot_golden") return 3;
+  if (type === "carrot_rotten") return -0.6;
   if (type === "powerup_heart") return e.lives < 3 ? 2 : 0.8;
   if (type.startsWith("powerup_")) return 0.9;
   return 0;

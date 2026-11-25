@@ -82,7 +82,11 @@ export type SfxId =
   | "death"
   | "carrot_shoot"
   | "blaster_shoot"
-  | "ui_click";
+  | "ui_click"
+  | "near_miss"
+  | "combo_up"
+  | "golden_carrot"
+  | "rotten_carrot";
 
 /** Gapless looping beds. `golden_bunny_loop` is a full music track, handled as a music override. */
 export type AmbientId = "rapid_rabbit_loop" | "attract_loop" | "golden_bunny_loop" | "static_endgame";
@@ -103,6 +107,10 @@ const SFX_FILES: Record<SfxId, string> = {
   carrot_shoot: "carrot_shoot.wav",
   blaster_shoot: "blaster_shoot.wav",
   ui_click: "ui_click.wav",
+  near_miss: "near_miss.wav",
+  combo_up: "combo_up.wav",
+  golden_carrot: "golden_carrot.wav",
+  rotten_carrot: "rotten_carrot.wav",
 };
 
 const AMBIENT_FILES: Record<BufferAmbientId, string> = {
@@ -140,6 +148,8 @@ const SFX_THROTTLE_MS: Partial<Record<SfxId, number>> = {
   ball_explode: 40,
   carrot_collect: 30,
   blaster_shoot: 60,
+  near_miss: 120,
+  combo_up: 150,
 };
 const MAX_VOICES_PER_SFX = 4;
 const MAX_VOICES_TOTAL = 16;

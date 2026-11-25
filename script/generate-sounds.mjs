@@ -174,6 +174,49 @@ const sfx = [
   ["ui_click", () => tone(600, 0.05, 0.25)],
 ];
 
+/** Frequency sweep from f0 to f1 (Hz) over the duration, with a quick fade out. */
+function sweep(f0, f1, durationSec, volume = 0.25) {
+  const n = Math.floor(SAMPLE_RATE * durationSec);
+  const samples = [];
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const k = i / n;
+    const f = f0 + (f1 - f0) * k;
+    phase += (2 * Math.PI * f) / SAMPLE_RATE;
+    const g = Math.min(1, i / (SAMPLE_RATE * 0.005)) * (1 - k) ** 1.5;
+    samples.push(32767 * volume * g * Math.sin(phase));
+  }
+  return samples;
+}
+
+/** Quick notes one after another (an arpeggio). */
+function arpeggio(freqs, noteSec, volume = 0.22) {
+  return freqs.flatMap((f) => tone(f, noteSec, volume));
+}
+
+/** Low buzzy wobble (square-ish wave with vibrato). */
+function buzz(freq, durationSec, volume = 0.22) {
+  const n = Math.floor(SAMPLE_RATE * durationSec);
+  const samples = [];
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SAMPLE_RATE;
+    const f = freq * (1 - 0.35 * (i / n)) + 6 * Math.sin(2 * Math.PI * 9 * t);
+    phase += (2 * Math.PI * f) / SAMPLE_RATE;
+    const g = Math.min(1, i / (SAMPLE_RATE * 0.01)) * (1 - i / n);
+    samples.push(32767 * volume * g * Math.tanh(3 * Math.sin(phase)));
+  }
+  return samples;
+}
+
+// New gameplay sounds (placeholders until real recordings exist)
+sfx.push(
+  ["near_miss", () => sweep(1400, 500, 0.16, 0.2)],
+  ["combo_up", () => arpeggio([660, 880], 0.06, 0.22)],
+  ["golden_carrot", () => arpeggio([784, 988, 1175, 1568], 0.07, 0.24)],
+  ["rotten_carrot", () => buzz(140, 0.3, 0.22)],
+);
+
 const ambient = [
   // Rapid Rabbit: bright, fast-pulsing whir
   ["rapid_rabbit_loop", () => seamlessLoop(2, [
@@ -190,7 +233,6 @@ const ambient = [
 
 const music = [
   ["music_menu", () => musicLoop(4, 0.12)],
-  ["music_gameover", () => musicLoop(3, 0.1)],
 ];
 
 const force = process.argv.includes("--force");

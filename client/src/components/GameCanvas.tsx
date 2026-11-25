@@ -167,7 +167,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     const [gameState, setGameState] = useState<GameState>("menu");
     const gameStateRef = useRef<GameState>("menu");
     gameStateRef.current = gameState;
-    const [hud, setHud] = useState<HudState>({ score: 0, level: initialLevel, carrots: 0, lives: 3 });
+    const [hud, setHud] = useState<HudState>({ score: 0, level: initialLevel, carrots: 0, lives: 3, combo: 1, comboChain: 0 });
     const [paused, setPausedState] = useState(false);
     const pausedRef = useRef(false);
     const [gateOpen, setGateOpen] = useState(autoStart && startGate);
@@ -761,6 +761,11 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
               <div className="flex">
                 <div className="game-hud-pill text-primary">🥕 {hud.carrots}/10</div>
                 <div className="game-hud-pill text-red-500">❤️ {hud.lives === 10 ? "MAX" : hud.lives}</div>
+                {hud.combo > 1 && (
+                  <div key={hud.comboChain} className="game-hud-pill game-hud-combo" aria-label={`Combo times ${hud.combo}`}>
+                    x{hud.combo}
+                  </div>
+                )}
               </div>
               <div className="flex">
                 <div className="game-hud-pill">LEVEL {hud.level}</div>

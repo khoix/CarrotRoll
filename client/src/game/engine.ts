@@ -9,7 +9,17 @@
  */
 import type { SfxId } from "@/contexts/SoundContext";
 import { mulberry32, randomSeed, type Rng } from "./rng";
-import { FINAL_LEVEL, difficulty, itemForEntity, itemsUnlockingAt, pickCollectible, type CollectibleType, type ItemDef } from "./content";
+import {
+  FINAL_LEVEL,
+  MECHANICS,
+  difficulty,
+  introForEntity,
+  isGoodCarrot,
+  itemsUnlockingAt,
+  mechanicUnlocked,
+  pickCollectible,
+  type CollectibleType,
+} from "./content";
 
 export const BASE_W = 800;
 export const BASE_H = 600;
@@ -35,6 +45,8 @@ export type ObjType =
   | "spike"
   | "ball"
   | "carrot"
+  | "carrot_golden"
+  | "carrot_rotten"
   | "powerup_invincible"
   | "powerup_speed"
   | "powerup_heart"
@@ -55,11 +67,14 @@ export type Entity = {
   active: boolean;
   face?: number;
   angle?: number;
+  /** Near-miss tracking: 1 = passed close, 2 = bonus awarded. */
+  near?: number;
 };
 
 export type Phase = "idle" | "countdown" | "playing" | "over" | "ending";
 
-export type HudState = { score: number; level: number; carrots: number; lives: number };
+/** combo = current multiplier (1 = none); comboChain changes on every combo pickup (restarts the HUD timer). */
+export type HudState = { score: number; level: number; carrots: number; lives: number; combo: number; comboChain: number };
 
 export type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string; gravity: number };
 export type Popup = { x: number; y: number; text: string; start: number; color: string; big?: boolean };
@@ -137,7 +152,10 @@ export class GameEngine {
   seenItems = new Set<string>();
   stats: RunStats = { levelStart: 0, levelTimes: [], deathCause: null, pickups: {} };
   /** Items unlocking on this level, waiting for their guaranteed first spawn. */
-  private pendingUnlocks: ItemDef[] = [];
+  private pendingUnlocks: CollectibleType[] = [];
+  /** Carrots grabbed in the current quick chain, and when the chain expires (ms, sim time). */
+  comboChain = 0;
+  comboUntil = 0;
   private nextUnlockSpawn = 0;
 
   score = 0;
@@ -175,7 +193,7 @@ export class GameEngine {
   private rapidOn = false;
   private attractOn = false;
   private goldenOn = false;
-  private lastHud: HudState = { score: -1, level: -1, carrots: -1, lives: -1 };
+  private lastHud: HudState = { score: -1, level: -1, carrots: -1, lives: -1, combo: -1, comboChain: -1 };
 
   constructor(private events: EngineEvents) {}
 
@@ -243,6 +261,8 @@ export class GameEngine {
     this.lives = 3;
     this.maxHeartsBlastStart = null;
     this.maxHeartsBonusAwarded = false;
+    this.comboChain = 0;
+    this.comboUntil = 0;
     this.lastBlasterShot = -Infinity;
     this.lastDeflect = -Infinity;
     this.touchMove = null;
@@ -262,6 +282,18 @@ export class GameEngine {
   private beginLevel(startTime: number) {
     this.pendingUnlocks = itemsUnlockingAt(this.level);
     this.nextUnlockSpawn = startTime + 3000;
+    for (const m of MECHANICS) {
+      if (m.unlockLevel !== this.level || this.seenItems.has(m.id)) continue;
+      this.seenItems.add(m.id);
+      this.events.discovered?.(m.id);
+      this.events.announce?.({ kind: "new", title: m.name, body: m.blurb });
+    }
+  }
+
+  /** Current score multiplier from the carrot combo (1 = no combo). */
+  get comboMult() {
+    if (!mechanicUnlocked("combo", this.level) || this.comboChain < 2) return 1;
+    return Math.min(5, 1 + Math.floor(this.comboChain / 2));
   }
 
   /** Leave play without game-over (menu / unmount). */
@@ -302,7 +334,8 @@ export class GameEngine {
       this.obstacles.push({ x: clampX(x - 20, 40), y: clampY(y - 20, 40), width: 40, height: 40, type, vx: 0, vy: this.fallSpeed, active: true });
       return;
     }
-    const w = type === "carrot" ? 40 : 30;
+    const isCarrot = type.startsWith("carrot");
+    const w = isCarrot ? 40 : 30;
     this.collectibles.push({
       x: clampX(x - w / 2, w),
       y: clampY(y - w / 2, w),
@@ -312,7 +345,7 @@ export class GameEngine {
       vx: 0,
       vy: this.fallSpeed,
       active: true,
-      ...(type === "carrot" && { face: Math.floor(this.rng() * 6) }),
+      ...(isCarrot && { face: type === "carrot_rotten" ? 1 : Math.floor(this.rng() * 6) }),
     });
   }
 
@@ -392,6 +425,7 @@ export class GameEngine {
       if (p.invincibilityTimer <= 0) p.invincible = false;
     }
     if (p.hitFlash > 0) p.hitFlash = Math.max(0, p.hitFlash - dt);
+    if (this.comboChain > 0 && t > this.comboUntil) this.comboChain = 0;
 
     // Giant carrot
     const gc = this.giantCarrot;
@@ -534,7 +568,7 @@ export class GameEngine {
 
     // Guaranteed first spawn of anything that unlocks on this level
     if (this.pendingUnlocks.length && t >= this.nextUnlockSpawn) {
-      this.spawnCollectible(this.pendingUnlocks.shift()!.entity);
+      this.spawnCollectible(this.pendingUnlocks.shift()!);
       this.nextUnlockSpawn = t + 3000;
     }
 
@@ -556,12 +590,41 @@ export class GameEngine {
     moveAll(this.obstacles);
     moveAll(this.collectibles);
 
+    // Golden carrots run away from the bunny
+    {
+      const px = p.x + p.width / 2;
+      const py = p.y + p.height / 2;
+      for (const o of this.collectibles) {
+        if (!o.active || o.type !== "carrot_golden") continue;
+        const dx = o.x + o.width / 2 - px;
+        const dy = o.y + o.height / 2 - py;
+        const d = Math.hypot(dx, dy) || 1e-6;
+        if (d < 170) {
+          o.vx += (dx / d) * 900 * dt;
+          o.vy += (dy / d) * 400 * dt;
+        } else {
+          o.vx *= Math.pow(0.3, dt);
+          o.vy += (fall - o.vy) * Math.min(1, 2 * dt);
+        }
+        const v = Math.hypot(o.vx, o.vy);
+        const cap = 230 * vS;
+        if (v > cap) {
+          o.vx *= cap / v;
+          o.vy *= cap / v;
+        }
+        if (o.x < 0 || o.x > W - o.width) {
+          o.x = Math.max(0, Math.min(W - o.width, o.x));
+          o.vx = -o.vx * 0.5;
+        }
+      }
+    }
+
     // Attract-o-Hare
     if (p.attractTimer > 0) {
       const px = p.x + p.width / 2;
       const py = p.y + p.height / 2;
       for (const o of this.collectibles) {
-        if (!o.active || o.type !== "carrot") continue;
+        if (!o.active || !isGoodCarrot(o.type)) continue;
         const dx = px - (o.x + o.width / 2);
         const dy = py - (o.y + o.height / 2);
         const d = Math.hypot(dx, dy) || 1e-6;
@@ -668,6 +731,7 @@ export class GameEngine {
       this.events.sfx("hit_damage");
       p.stunned = 0.5;
       p.hitFlash = 0.18;
+      this.comboChain = 0;
       this.shake = 260;
       this.shakeStrength = 7;
       this.giantCarrot.face = Math.floor(this.rng() * 6);
@@ -690,6 +754,25 @@ export class GameEngine {
     for (const o of this.projectiles) if (hazard(o)) return;
     for (const o of obs) if (hazard(o)) return;
 
+    // Near miss: a hazard came within a few px while you were vulnerable, then moved away
+    if (mechanicUnlocked("near_miss", this.level)) {
+      const vulnerable = !this.damageDisabled && p.shieldTimer <= 0 && p.speedBoostTimer <= 0 && !(p.invincible && p.invincibilityTimer > 0);
+      const check = (o: Entity) => {
+        if (!o.active || (o.type !== "spike" && o.type !== "ball") || o.near === 2) return;
+        const gx = Math.max(o.x - (p.x + p.width), p.x - (o.x + o.width), 0);
+        const gy = Math.max(o.y - (p.y + p.height), p.y - (o.y + o.height), 0);
+        const gap = Math.hypot(gx, gy);
+        if (!o.near && vulnerable && gap > 0 && gap < 10) o.near = 1;
+        else if (o.near === 1 && gap > 28) {
+          o.near = 2;
+          this.events.sfx("near_miss");
+          this.addScore(5, p.x + p.width / 2, p.y - 6, false, "CLOSE! +5");
+        }
+      };
+      for (const o of this.projectiles) check(o);
+      for (const o of obs) check(o);
+    }
+
     // Collectibles vs player
     for (const o of this.collectibles) {
       if (!o.active || !overlaps(p, o)) continue;
@@ -698,15 +781,32 @@ export class GameEngine {
       const ox = o.x + o.width / 2;
       const oy = o.y + o.height / 2;
       switch (o.type) {
-        case "carrot": {
-          this.events.sfx("carrot_collect");
-          this.addScore(10 * this.level, ox, oy);
-          this.burst(ox, oy, 8, ["#fb923c", "#fdba74", "#22c55e"], 140);
-          this.carrots += 1;
+        case "carrot":
+        case "carrot_golden": {
+          const golden = o.type === "carrot_golden";
+          if (mechanicUnlocked("combo", this.level)) {
+            this.comboChain += 1;
+            this.comboUntil = t + 2000;
+            if (this.comboChain >= 2 && this.comboChain % 2 === 0 && this.comboMult <= 5) this.events.sfx("combo_up");
+          }
+          const mult = this.comboMult;
+          const pts = (golden ? 50 : 10) * this.level * mult;
+          this.events.sfx(golden ? "golden_carrot" : "carrot_collect");
+          this.addScore(pts, ox, oy, golden, mult > 1 ? `+${pts} x${mult}` : undefined);
+          this.burst(ox, oy, golden ? 20 : 8, golden ? ["#fde047", "#facc15", "#ffffff"] : ["#fb923c", "#fdba74", "#22c55e"], golden ? 220 : 140);
+          this.carrots += golden ? 5 : 1;
           if (this.carrots >= 10) {
             this.levelUp();
             if (this.phase === "ending") return;
           }
+          break;
+        }
+        case "carrot_rotten": {
+          this.events.sfx("rotten_carrot");
+          this.carrots = Math.max(0, this.carrots - 1);
+          this.comboChain = 0;
+          this.pushPopup({ x: ox, y: oy, text: "ROTTEN! -1", start: this.time, color: "#a3e635" });
+          this.burst(ox, oy, 10, ["#65a30d", "#3f6212", "#78716c"], 120);
           break;
         }
         case "powerup_invincible":
@@ -802,9 +902,10 @@ export class GameEngine {
       vx: 0,
       vy: this.fallSpeed,
       active: true,
-      ...(type === "carrot" && { face: Math.floor(this.rng() * 6) }),
+      ...(type !== "carrot_rotten" && type.startsWith("carrot") && { face: Math.floor(this.rng() * 6) }),
+      ...(type === "carrot_rotten" && { face: 1 }),
     });
-    const item = itemForEntity(type);
+    const item = introForEntity(type);
     if (item && !this.seenItems.has(item.id)) {
       this.seenItems.add(item.id);
       this.events.discovered?.(item.id);
@@ -850,9 +951,9 @@ export class GameEngine {
     this.setPhase("over");
   }
 
-  private addScore(n: number, x: number, y: number, big = false) {
+  private addScore(n: number, x: number, y: number, big = false, label?: string) {
     this.score += n;
-    this.pushPopup({ x, y, text: `+${n}`, start: this.time, color: big ? "#facc15" : "#ffffff", big });
+    this.pushPopup({ x, y, text: label ?? `+${n}`, start: this.time, color: big ? "#facc15" : "#ffffff", big });
   }
 
   /** At most 24 popups on screen; the oldest is dropped first. */
@@ -922,8 +1023,10 @@ export class GameEngine {
 
   private emitHud(force = false) {
     const h = this.lastHud;
-    if (!force && h.score === this.score && h.level === this.level && h.carrots === this.carrots && h.lives === this.lives) return;
-    this.lastHud = { score: this.score, level: this.level, carrots: this.carrots, lives: this.lives };
+    const combo = this.comboMult;
+    const chain = combo > 1 ? this.comboChain : 0;
+    if (!force && h.score === this.score && h.level === this.level && h.carrots === this.carrots && h.lives === this.lives && h.combo === combo && h.comboChain === chain) return;
+    this.lastHud = { score: this.score, level: this.level, carrots: this.carrots, lives: this.lives, combo, comboChain: chain };
     this.events.hud({ ...this.lastHud });
   }
 

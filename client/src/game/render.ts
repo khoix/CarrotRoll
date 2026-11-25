@@ -130,6 +130,30 @@ export class Renderer {
     for (const o of e.collectibles) {
       const cx = o.x + o.width / 2;
       const cy = o.y + o.height / 2;
+      if (o.type === "carrot_golden") {
+        const spr = S.goldenCarrots[o.face ?? 0];
+        const pulse = 1 + Math.sin(time / 120) * 0.06;
+        ctx.globalAlpha = 0.35 + 0.2 * Math.sin(time / 90);
+        ctx.fillStyle = "#fde047";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 26 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        if (spr) blit(ctx, spr, cx, cy, pulse);
+        continue;
+      }
+      if (o.type === "carrot_rotten") {
+        if (S.rottenCarrot) blit(ctx, S.rottenCarrot, cx, cy, o.width / 40);
+        // Two little flies circling it
+        ctx.fillStyle = "#1f2937";
+        for (let k = 0; k < 2; k++) {
+          const a = time / (k ? 140 : 190) + k * 2.4;
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(a) * 16, cy - 14 + Math.sin(a * 1.7) * 6, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        continue;
+      }
       if (o.type === "carrot") {
         const spr = S.carrots[o.face ?? 0];
         if (spr) blit(ctx, spr, cx, cy, o.width / 40);
