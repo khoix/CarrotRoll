@@ -11,6 +11,7 @@ import Play from "@/pages/Play";
 import Level20Demo from "@/pages/Level20Demo";
 import AdminRoll from "@/pages/AdminRoll";
 import MaintenancePage from "@/pages/MaintenancePage";
+import { STATIC_SITE } from "@/hooks/use-scores";
 
 const BASE_PATH = import.meta.env.BASE_URL || "/";
 const basePath = BASE_PATH === "/" ? "/" : BASE_PATH.replace(/\/$/, "");
@@ -22,11 +23,16 @@ function AppRouter() {
         <Route path="/" component={Home} />
         <Route path="/play" component={Play} />
         <Route path="/demo-level20" component={Level20Demo} />
-        <Route path="/adminroll/scores" component={AdminRoll} />
-        <Route path="/adminroll/demo" component={AdminRoll} />
-        <Route path="/adminroll/ending-demo" component={AdminRoll} />
-        <Route path="/adminroll/ending-demo-mobile" component={AdminRoll} />
-        <Route path="/adminroll" component={AdminRoll} />
+        {/* Admin tools need the server; a static (GitHub Pages) build has none. */}
+        {!STATIC_SITE && (
+          <>
+            <Route path="/adminroll/scores" component={AdminRoll} />
+            <Route path="/adminroll/demo" component={AdminRoll} />
+            <Route path="/adminroll/ending-demo" component={AdminRoll} />
+            <Route path="/adminroll/ending-demo-mobile" component={AdminRoll} />
+            <Route path="/adminroll" component={AdminRoll} />
+          </>
+        )}
         <Route component={NotFound} />
       </Switch>
     </Router>

@@ -52,6 +52,16 @@ Optional environment variables:
 | `ADMIN_PASSWORD` | Initial admin password (first run) | `password` |
 | `VITE_BASE_URL` | Public base path for assets/routes | `/` in dev, `/carrotroll/` in production |
 
+### Web preview (GitHub Pages)
+
+`.github/workflows/pages.yml` builds the client as a static site and deploys it to
+`https://<owner>.github.io/<repo>/` on every push to `main` (or run it by hand from the Actions tab).
+
+- One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+- Pages has no server, so the preview keeps high scores **in each player's browser** and leaves out
+  the admin tools. The shared leaderboard needs the full Node app (`npm run build && npm start`).
+- Try the same build locally: `VITE_BASE_URL=/CarrotRoll/ VITE_STATIC_SITE=true npx vite build`.
+
 ## Controls
 
 | Input | Action |

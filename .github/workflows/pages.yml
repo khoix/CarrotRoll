@@ -1,0 +1,66 @@
+# Builds the client as a static site and publishes it to GitHub Pages as a web preview.
+# There is no server on Pages, so this build stores high scores in the player's browser
+# (VITE_STATIC_SITE) and leaves out the admin tools. The full app with the shared
+# leaderboard still needs `npm run build && npm start` on a Node host.
+#
+# One-time setup: repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Deploy web preview to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - run: npm ci
+
+      - name: Build static client
+        env:
+          # e.g. "/CarrotRoll/" for https://<owner>.github.io/CarrotRoll/ ("/" on a custom domain)
+          VITE_BASE_URL: ${{ steps.pages.outputs.base_path }}/
+          VITE_STATIC_SITE: "true"
+        run: npx vite build
+
+      - name: SPA fallback and Pages tweaks
+        run: |
+          # Pages serves 404.html for unknown paths, so deep links like /play load the app.
+          cp dist/public/index.html dist/public/404.html
+          touch dist/public/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
