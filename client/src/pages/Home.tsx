@@ -196,7 +196,7 @@ export default function Home() {
     <div className={`h-screen flex flex-col ${shouldDisableScroll ? 'overflow-y-hidden' : 'overflow-y-auto'} bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-orange-100 via-orange-50 to-white ${!isMobile ? 'p-4 md:p-8' : ''}`}>
       {/* Header: fixed with shadow/border on mobile, in-flow on desktop */}
       {isMobile ? (
-      <div className="fixed top-0 left-0 right-0 z-10 bg-orange-50/95 backdrop-blur-sm border-b-2 border-gray-300 shadow-[0_4px_12px_rgba(0,0,0,0.12)]">
+      <div className="fixed top-0 left-0 right-0 z-10 bg-orange-50/95 backdrop-blur-sm border-b-2 border-gray-300 shadow-[0_4px_12px_rgba(0,0,0,0.12)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         <header className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex justify-between items-center w-full">
           <div className="flex items-center gap-2">
              <div className="w-12 h-12 bg-primary rounded-xl rotate-3 flex items-center justify-center shadow-lg border-2 border-black overflow-visible">
@@ -398,7 +398,7 @@ export default function Home() {
       )}
 
       {/* Content: wrapped in main on mobile (with top clearance), fragment on desktop; single content div with conditional layout */}
-      <ContentWrapper {...(isMobile ? { className: "flex-1 min-h-0 flex flex-col pt-[5.5rem] px-0 pb-0" } : {})}>
+      <ContentWrapper {...(isMobile ? { className: "flex-1 min-h-0 flex flex-col pt-[calc(5.5rem+env(safe-area-inset-top))] px-0 pb-0" } : {})}>
       {/* Title load screen: full-screen overlay, click to morph title to header then dismiss */}
       <AnimatePresence>
         {showTitleScreen && (
@@ -695,7 +695,7 @@ export default function Home() {
       <AnimatePresence>
         {showLeaderboardOverlay && (
           <motion.div
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-6"
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-6 safe-area-pad-top"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

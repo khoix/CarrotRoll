@@ -189,3 +189,8 @@
   background: rgba(255, 255, 255, 0.85);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
+
+/* Keep page content clear of the iOS status bar / notch (viewport-fit=cover lets pages draw under it) */
+.safe-area-pad-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
