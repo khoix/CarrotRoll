@@ -451,6 +451,156 @@ export function drawRabbit(ctx: CanvasRenderingContext2D, cx: number, cy: number
 }
 
 // ---------------------------------------------------------------------------
+// Tier hazards (drawn centred on 0,0)
+// ---------------------------------------------------------------------------
+
+/** Brussels sprout: a small round green head with leaf creases. */
+function drawSprout(ctx: CanvasRenderingContext2D, r: number) {
+  const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, 0, 0, 0, r);
+  g.addColorStop(0, "#bbf7d0");
+  g.addColorStop(0.55, "#4ade80");
+  g.addColorStop(1, "#15803d");
+  ctx.fillStyle = g;
+  ctx.strokeStyle = "rgba(0,0,0,0.85)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(20,83,45,0.7)";
+  ctx.lineWidth = 1;
+  for (const a of [-0.9, 0, 0.9]) {
+    ctx.beginPath();
+    ctx.moveTo(0, r * 0.85);
+    ctx.quadraticCurveTo(Math.sin(a) * r * 0.9, 0, Math.sin(a) * r * 0.5, -r * 0.85);
+    ctx.stroke();
+  }
+}
+
+/** Cauliflower cannonball: bumpy white florets ringed by green leaves. */
+function drawCauliflower(ctx: CanvasRenderingContext2D, r: number) {
+  ctx.fillStyle = "#16a34a";
+  ctx.strokeStyle = "rgba(0,0,0,0.8)";
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.ellipse(Math.cos(a) * r * 0.62, Math.sin(a) * r * 0.62, r * 0.42, r * 0.24, a, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const bumps: [number, number, number][] = [[0, 0, 0.42], [-0.34, -0.26, 0.3], [0.34, -0.26, 0.3], [-0.36, 0.24, 0.3], [0.36, 0.24, 0.3], [0, -0.44, 0.27], [0, 0.44, 0.27]];
+  for (const [bx, by, br] of bumps) {
+    const g = ctx.createRadialGradient(bx * r - br * r * 0.3, by * r - br * r * 0.3, 0, bx * r, by * r, br * r);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.7, "#f5f5f4");
+    g.addColorStop(1, "#d6d3d1");
+    ctx.fillStyle = g;
+    ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(bx * r, by * r, br * r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+/** Icicle: a long pale-blue spike pointing down. */
+function drawIcicle(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const g = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  g.addColorStop(0, "#a5f3fc");
+  g.addColorStop(0.45, "#f0fdff");
+  g.addColorStop(1, "#67e8f9");
+  ctx.fillStyle = g;
+  ctx.strokeStyle = "rgba(14,116,144,0.9)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, -h / 2);
+  ctx.lineTo(w / 2, -h / 2);
+  ctx.lineTo(0, h / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.15, -h / 2 + 4);
+  ctx.lineTo(-w * 0.02, h * 0.2);
+  ctx.stroke();
+}
+
+/** Radish: magenta root with a white tip and green leaves (pointing right; rotated to its heading). */
+function drawRadish(ctx: CanvasRenderingContext2D, r: number) {
+  ctx.fillStyle = "#22c55e";
+  ctx.strokeStyle = "rgba(0,0,0,0.8)";
+  ctx.lineWidth = 1.2;
+  for (const a of [-0.5, 0, 0.5]) {
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.95 - Math.cos(a) * r * 0.3, Math.sin(a) * r * 0.55, r * 0.45, r * 0.2, a, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const g = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
+  g.addColorStop(0, "#f9a8d4");
+  g.addColorStop(0.6, "#db2777");
+  g.addColorStop(1, "#9d174d");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.7, 0);
+  ctx.bezierCurveTo(-r * 0.7, -r * 0.85, r * 0.55, -r * 0.7, r * 1.05, 0);
+  ctx.bezierCurveTo(r * 0.55, r * 0.7, -r * 0.7, r * 0.85, -r * 0.7, 0);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#fdf2f8";
+  ctx.beginPath();
+  ctx.moveTo(r * 0.6, -r * 0.22);
+  ctx.quadraticCurveTo(r * 1.0, 0, r * 0.6, r * 0.22);
+  ctx.fill();
+}
+
+/** Homing beet: a dark red-purple bulb with angry eyes and leaves. */
+function drawBeet(ctx: CanvasRenderingContext2D, r: number) {
+  ctx.fillStyle = "#16a34a";
+  ctx.strokeStyle = "rgba(0,0,0,0.8)";
+  ctx.lineWidth = 1.2;
+  for (const a of [-0.45, 0.45]) {
+    ctx.beginPath();
+    ctx.ellipse(Math.sin(a) * r * 0.5, -r * 1.05, r * 0.2, r * 0.45, a, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const g = ctx.createRadialGradient(-r * 0.3, -r * 0.35, 0, 0, 0, r);
+  g.addColorStop(0, "#f472b6");
+  g.addColorStop(0.5, "#9d174d");
+  g.addColorStop(1, "#500724");
+  ctx.fillStyle = g;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 0.8);
+  ctx.bezierCurveTo(r * 1.1, -r * 0.8, r * 0.9, r * 0.6, 0, r * 1.05);
+  ctx.bezierCurveTo(-r * 0.9, r * 0.6, -r * 1.1, -r * 0.8, 0, -r * 0.8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = 1.2;
+  for (const sx of [-0.32, 0.32]) {
+    ctx.beginPath();
+    ctx.arc(sx * r, -r * 0.05, r * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#111";
+    ctx.beginPath();
+    ctx.arc(sx * r * 0.85, 0, r * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.moveTo(sx * r - r * 0.2 * Math.sign(sx), -r * 0.32);
+    ctx.lineTo(sx * r + r * 0.18 * Math.sign(sx), -r * 0.2);
+    ctx.stroke();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Sprite cache
 // ---------------------------------------------------------------------------
 
@@ -503,6 +653,12 @@ export class SpriteCache {
   carrots: Sprite[] = [];
   goldenCarrots: Sprite[] = [];
   rottenCarrot: Sprite | null = null;
+  burr: Sprite | null = null;
+  sprout: Sprite;
+  cauliflower: Sprite;
+  icicle: Sprite;
+  radish: Sprite;
+  beet: Sprite;
   broccoli: Sprite | null = null;
   ball: Sprite | null = null;
   powerups: Partial<Record<PowerupType, Sprite>> = {};
@@ -521,6 +677,11 @@ export class SpriteCache {
       // 40×40 rabbit; tufts reach ±27 and ears ~9 above its box, so pad the sprite.
       this.rabbits[v] = makeSprite(64, 68, scale, 32, 38, (c) => drawRabbit(c, 32, 38, 40, 40, v));
     }
+    this.sprout = makeSprite(28, 28, scale, 14, 14, (c) => { c.translate(14, 14); drawSprout(c, 12); });
+    this.cauliflower = makeSprite(64, 64, scale, 32, 32, (c) => { c.translate(32, 32); drawCauliflower(c, 28); });
+    this.icicle = makeSprite(22, 50, scale, 11, 25, (c) => { c.translate(11, 25); drawIcicle(c, 18, 46); });
+    this.radish = makeSprite(48, 36, scale, 24, 18, (c) => { c.translate(26, 18); drawRadish(c, 15); });
+    this.beet = makeSprite(36, 44, scale, 18, 24, (c) => { c.translate(18, 26); drawBeet(c, 14); });
     // Drop shadow (shadowBlur baked once instead of every frame). Same look as the old live version.
     this.shadow = makeSprite(64, 64, scale, 32, 32, (c) => {
       c.shadowColor = "rgba(0, 0, 0, 0.4)";
@@ -640,7 +801,18 @@ export class SpriteCache {
         drawCarrotFace(c, 4, 20, 20 + 40 * 0.08, 27, true);
       });
       if (imgs.broccoli) { const b = imgs.broccoli; this.broccoli = makeSprite(40, 40, scale, 20, 20, (c) => c.drawImage(b, 0, 0, 40, 40)); }
-      if (imgs.ball) { const b = imgs.ball; this.ball = makeSprite(40, 40, scale, 20, 20, (c) => c.drawImage(b, 0, 0, 40, 40)); }
+      if (imgs.ball) {
+        const b = imgs.ball;
+        this.ball = makeSprite(40, 40, scale, 20, 20, (c) => c.drawImage(b, 0, 0, 40, 40));
+        // Chestnut burr: the spiky ball in chestnut brown
+        this.burr = makeSprite(40, 40, scale, 20, 20, (c) => {
+          c.drawImage(b, 0, 0, 40, 40);
+          c.globalCompositeOperation = "source-atop";
+          c.fillStyle = "rgba(146, 64, 14, 0.62)";
+          c.fillRect(0, 0, 40, 40);
+          c.globalCompositeOperation = "source-over";
+        });
+      }
     });
   }
 

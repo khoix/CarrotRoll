@@ -20,6 +20,7 @@ import {
   pickCollectible,
   type CollectibleType,
 } from "./content";
+import { TIERS, hazardRate, tierIndexForLevel, tierForLevel, tierProgress, lerpRange } from "./tiers";
 
 export const BASE_W = 800;
 export const BASE_H = 600;
@@ -44,6 +45,14 @@ const MAX_HEARTS = 10;
 export type ObjType =
   | "spike"
   | "ball"
+  | "burr"
+  | "burr_small"
+  | "sprout"
+  | "sprout_small"
+  | "cauliflower"
+  | "icicle"
+  | "meteor"
+  | "beet"
   | "carrot"
   | "carrot_golden"
   | "carrot_rotten"
@@ -69,7 +78,25 @@ export type Entity = {
   angle?: number;
   /** Near-miss tracking: 1 = passed close, 2 = bonus awarded. */
   near?: number;
+  /** Hits left before it breaks (cauliflower). */
+  hp?: number;
+  /** Spawn time (ms, sim clock): sprouts burst and beets expire relative to it. */
+  born?: number;
 };
+
+/** Things that hurt the bunny on contact. */
+export const HARMFUL = new Set<ObjType>(["spike", "ball", "burr", "burr_small", "sprout", "sprout_small", "cauliflower", "icicle", "meteor", "beet"]);
+/** Things the bunny's lasers can destroy. */
+const BLASTABLE = new Set<ObjType>(["ball", "burr", "burr_small", "cauliflower", "beet"]);
+/** Falling balls that bounce off each other. */
+const BOUNCY = new Set<ObjType>(["ball", "burr", "burr_small"]);
+/** Shots that spin as they fly. */
+const SPINNING = new Set<ObjType>(["spike", "sprout", "sprout_small", "cauliflower"]);
+
+/** A column hazard: a warning stripe, then an icicle drops or lightning strikes. Times in ms. */
+export type Strike = { kind: "icicle" | "lightning"; x: number; w: number; warnUntil: number; endAt: number };
+/** A snow gust: shown from warnAt, pushes from start to end (px/s in direction dir). */
+export type Wind = { dir: -1 | 1; warnAt: number; start: number; end: number; strength: number };
 
 export type Phase = "idle" | "countdown" | "playing" | "over" | "ending";
 
@@ -91,6 +118,8 @@ export interface EngineEvents {
   announce?(a: Announcement): void;
   /** An item was seen for the first time on this device (host persists it). */
   discovered?(id: string): void;
+  /** The tier changed (0-based index into TIERS); the host switches the look. */
+  tier?(index: number): void;
 }
 
 /** A harmful thing's centre, velocity and radius (used by near-miss scoring and the simulation bots). */
@@ -153,6 +182,10 @@ export class GameEngine {
   stats: RunStats = { levelStart: 0, levelTimes: [], deathCause: null, pickups: {} };
   /** Items unlocking on this level, waiting for their guaranteed first spawn. */
   private pendingUnlocks: CollectibleType[] = [];
+  strikes: Strike[] = [];
+  wind: Wind | null = null;
+  private nextGustAt = Infinity;
+  tierIndex = -1;
   /** Carrots grabbed in the current quick chain, and when the chain expires (ms, sim time). */
   comboChain = 0;
   comboUntil = 0;
@@ -209,6 +242,10 @@ export class GameEngine {
   get carrotRestY() {
     return this.H - 120;
   }
+  /** Bunny speed scales with the playfield height like everything else, so tall phones play fair. */
+  get baseSpeed() {
+    return BASE_SPEED * Math.sqrt(this.vScale);
+  }
 
   // ---------------------------------------------------------------------------
   // Control
@@ -235,8 +272,10 @@ export class GameEngine {
     this.sparkleTrail.length = 0;
     this.particles.length = 0;
     this.popups.forEach((p) => { p.x *= sx; p.y *= sy; });
+    this.strikes.forEach((st) => { st.x *= sx; st.w *= sx; });
     this.W = w;
     this.H = h;
+    this.player.speed = this.player.speedBoostTimer > 0 ? this.baseSpeed * 1.5 : this.baseSpeed;
     this.giantCarrot.width = w;
     if (this.phase === "playing") this.giantCarrot.y = this.carrotRestY;
     this.dragTarget = null;
@@ -247,6 +286,11 @@ export class GameEngine {
     this.seed = seed >>> 0;
     this.rng = mulberry32(this.seed);
     this.player = newPlayer(this.W, this.H);
+    this.player.speed = this.baseSpeed;
+    this.strikes = [];
+    this.wind = null;
+    this.nextGustAt = Infinity;
+    this.tierIndex = -1;
     this.projectiles = [];
     this.obstacles = [];
     this.collectibles = [];
@@ -282,6 +326,20 @@ export class GameEngine {
   private beginLevel(startTime: number) {
     this.pendingUnlocks = itemsUnlockingAt(this.level);
     this.nextUnlockSpawn = startTime + 3000;
+    const ti = tierIndexForLevel(this.level);
+    if (ti !== this.tierIndex) {
+      const first = this.tierIndex < 0;
+      this.tierIndex = ti;
+      this.events.tier?.(ti);
+      const tier = TIERS[ti];
+      if (!first || ti > 0) {
+        this.events.sfx("tier_up");
+        this.events.announce?.({ kind: "tier", title: `Tier ${tier.n} · ${tier.theme.name}`, body: tier.newHazards.length ? `New: ${tier.newHazards.join(" and ")}` : undefined });
+      }
+    }
+    const gust = tierForLevel(this.level).rates.gustEvery;
+    this.nextGustAt = gust ? startTime + lerpRange(gust, tierProgress(this.level)) * 1000 * (0.6 + this.rng() * 0.6) : Infinity;
+    if (!gust) this.wind = null;
     for (const m of MECHANICS) {
       if (m.unlockLevel !== this.level || this.seenItems.has(m.id)) continue;
       this.seenItems.add(m.id);
@@ -349,13 +407,21 @@ export class GameEngine {
     });
   }
 
-  /** Every harmful thing currently in play (for near-miss checks and the simulation bots). */
+  /** Every harmful thing currently in play (for the simulation bots). */
   forEachThreat(cb: (t: Threat) => void) {
-    for (const o of this.projectiles) {
-      if (o.active && o.type === "spike") cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: o.width / 2 });
+    for (const arr of [this.projectiles, this.obstacles]) {
+      for (const o of arr) {
+        if (o.active && HARMFUL.has(o.type)) cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: Math.max(o.width, o.height) / 2 });
+      }
     }
-    for (const o of this.obstacles) {
-      if (o.active && o.type === "ball") cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: o.width / 2 });
+  }
+
+  /** Column danger zones (icicle and lightning warnings / strikes): x range and when it's live (ms). */
+  forEachZone(cb: (z: { x0: number; x1: number; from: number; to: number }) => void) {
+    for (const st of this.strikes) {
+      // An icicle falls fast down its column for about a second after the warning ends
+      const to = st.kind === "icicle" ? st.warnUntil + 1100 : st.endAt;
+      cb({ x0: st.x - st.w / 2, x1: st.x + st.w / 2, from: st.warnUntil, to });
     }
   }
 
@@ -411,11 +477,11 @@ export class GameEngine {
     if (p.speedBoostTimer > 0) {
       p.speedBoostTimer = Math.max(0, p.speedBoostTimer - dt);
       if (p.speedBoostTimer <= 0) {
-        p.speed = BASE_SPEED;
+        p.speed = this.baseSpeed;
         this.setLoop("rapid_rabbit_loop", false);
       }
     } else {
-      p.speed = BASE_SPEED;
+      p.speed = this.baseSpeed;
     }
     if (p.blasterTimer > 0) p.blasterTimer = Math.max(0, p.blasterTimer - dt);
     if (p.attractTimer > 0) p.attractTimer = Math.max(0, p.attractTimer - dt);
@@ -446,7 +512,17 @@ export class GameEngine {
         const sourceX = gc.x + margin + this.rng() * (gc.width - 2 * margin);
         const angle = Math.atan2(p.y - gc.y, p.x - sourceX);
         const speed = difficulty(this.level).shotSpeed * this.vScale;
-        this.projectiles.push({ x: sourceX, y: gc.y, width: 40, height: 40, type: "spike", vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, active: true, angle: 0 });
+        const cauli = hazardRate(this.level, (r) => r.cauliChance);
+        const sprout = hazardRate(this.level, (r) => r.sproutChance);
+        const roll = this.rng();
+        if (roll < cauli) {
+          const v = speed * 0.55;
+          this.projectiles.push({ x: sourceX - 28, y: gc.y - 28, width: 56, height: 56, type: "cauliflower", vx: Math.cos(angle) * v, vy: Math.sin(angle) * v, active: true, angle: 0, hp: 2 });
+        } else if (roll < cauli + sprout) {
+          this.projectiles.push({ x: sourceX - 13, y: gc.y - 13, width: 26, height: 26, type: "sprout", vx: Math.cos(angle) * speed * 0.85, vy: Math.sin(angle) * speed * 0.85, active: true, angle: 0, born: t });
+        } else {
+          this.projectiles.push({ x: sourceX, y: gc.y, width: 40, height: 40, type: "spike", vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, active: true, angle: 0 });
+        }
         this.events.sfx("carrot_shoot");
         gc.nextShot = difficulty(this.level).shotInterval;
       }
@@ -561,10 +637,12 @@ export class GameEngine {
 
     const diff = difficulty(this.level);
 
-    // Spiky balls
-    if (this.rng() < perStep(diff.ballChance, dt, this.widthScale)) {
-      this.obstacles.push({ x: this.rng() * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: "ball", vx: 0, vy: fall, active: true });
+    // Spiky balls (and, from tier 2, chestnut burrs)
+    if (this.rng() < perStep(diff.ballChance, dt, Math.sqrt(this.widthScale))) {
+      const burr = this.rng() < hazardRate(this.level, (r) => r.burrShare);
+      this.obstacles.push({ x: this.rng() * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: burr ? "burr" : "ball", vx: 0, vy: fall, active: true, hp: burr ? 1 : undefined });
     }
+    this.updateTierHazards(dt, t);
 
     // Guaranteed first spawn of anything that unlocks on this level
     if (this.pendingUnlocks.length && t >= this.nextUnlockSpawn) {
@@ -573,7 +651,8 @@ export class GameEngine {
     }
 
     // Collectibles
-    if (this.collectibles.length < diff.collectibleCap && this.rng() < perStep(0.02, dt, this.widthScale)) {
+    // Collectibles arrive at the same rate on every screen shape (narrow phones aren't starved of carrots)
+    if (this.collectibles.length < diff.collectibleCap && this.rng() < perStep(0.02, dt, Math.pow(this.widthScale, 0.25))) {
       this.spawnCollectible(pickCollectible(this.level, this.rng));
     }
 
@@ -582,7 +661,7 @@ export class GameEngine {
       for (const o of arr) {
         o.x += o.vx * dt;
         o.y += o.vy * dt;
-        if (o.type === "spike" && o.angle !== undefined) o.angle += dt * 12;
+        if (SPINNING.has(o.type) && o.angle !== undefined) o.angle += dt * (o.type === "cauliflower" ? 3 : 12);
         if (o.y > H + 100 || o.y < -400 || o.x < -100 || o.x > W + 100) o.active = false;
       }
     };
@@ -644,10 +723,10 @@ export class GameEngine {
     const obs = this.obstacles;
     for (let i = 0; i < obs.length; i++) {
       const a = obs[i];
-      if (!a.active || a.type !== "ball") continue;
+      if (!a.active || !BOUNCY.has(a.type)) continue;
       for (let j = i + 1; j < obs.length; j++) {
         const b = obs[j];
-        if (!b.active || b.type !== "ball") continue;
+        if (!b.active || !BOUNCY.has(b.type)) continue;
         const dx = b.x + b.width / 2 - (a.x + a.width / 2);
         const dy = b.y + b.height / 2 - (a.y + a.height / 2);
         const dist = Math.hypot(dx, dy) || 1e-6;
@@ -671,21 +750,36 @@ export class GameEngine {
     // Lasers vs balls
     const EXPLOSION_RADIUS = 110;
     const PUSH = 380;
+    const targets = [...obs, ...this.projectiles];
     for (const proj of this.projectiles) {
       if (!proj.active || proj.type !== "player_laser") continue;
-      for (const ball of obs) {
-        if (!ball.active || ball.type !== "ball" || !overlaps(proj, ball)) continue;
+      for (const ball of targets) {
+        if (!ball.active || !BLASTABLE.has(ball.type) || !overlaps(proj, ball)) continue;
         proj.active = false;
-        ball.active = false;
         const ex = ball.x + ball.width / 2;
         const ey = ball.y + ball.height / 2;
+        if (ball.hp && ball.hp > 1 && ball.type === "cauliflower") {
+          ball.hp -= 1;
+          this.burst(ex, ey, 6, ["#f5f5f4", "#d6d3d1"], 140);
+          this.events.sfx("shield_deflect");
+          break;
+        }
+        ball.active = false;
         this.explode(ex, ey, t);
-        this.addScore(5, ex, ey);
+        this.addScore(ball.type === "cauliflower" ? 15 : 5, ex, ey);
+        if (ball.type === "burr") {
+          // A burr splits into two small ones that scatter downward
+          for (const sgn of [-1, 1]) {
+            const a = Math.PI / 2 + sgn * 0.9;
+            const v = 170 * vS;
+            this.obstacles.push({ x: ex - 12, y: ey - 12, width: 24, height: 24, type: "burr_small", vx: Math.cos(a) * v, vy: Math.sin(a) * v, active: true });
+          }
+        }
         if (this.rng() < 0.1) {
           this.collectibles.push({ x: ball.x, y: ball.y, width: 30, height: 30, type: "powerup_heart", vx: 0, vy: fall, active: true });
         }
         for (const other of obs) {
-          if (!other.active || other.type !== "ball" || other === ball) continue;
+          if (!other.active || !BOUNCY.has(other.type) || other === ball) continue;
           const ddx = other.x + other.width / 2 - ex;
           const ddy = other.y + other.height / 2 - ey;
           const d = Math.hypot(ddx, ddy) || 1e-6;
@@ -710,13 +804,13 @@ export class GameEngine {
 
     // Hazards vs player
     const hazard = (o: Entity) => {
-      if (!o.active || (o.type !== "spike" && o.type !== "ball") || !overlaps(p, o)) return false;
+      if (!o.active || !HARMFUL.has(o.type) || !overlaps(p, o)) return false;
       if (p.shieldTimer > 0) {
         if (t - this.lastDeflect >= 500) {
           this.lastDeflect = t;
           this.events.sfx("shield_deflect");
         }
-        if (o.type === "ball") this.addScore(5, o.x + o.width / 2, o.y);
+        if (o.type === "ball" || o.type === "burr") this.addScore(5, o.x + o.width / 2, o.y);
         const dx = o.x + o.width / 2 - (p.x + p.width / 2);
         const dy = o.y + o.height / 2 - (p.y + p.height / 2);
         const len = Math.hypot(dx, dy) || 1;
@@ -725,40 +819,27 @@ export class GameEngine {
         o.vy = (dy / len) * speed;
         return false;
       }
-      if (this.damageDisabled || p.speedBoostTimer > 0 || (p.invincible && p.invincibilityTimer > 0)) return false;
+      if (!this.vulnerable) return false;
       o.active = false;
-      this.stats.deathCause = o.type;
-      this.events.sfx("hit_damage");
-      p.stunned = 0.5;
-      p.hitFlash = 0.18;
-      this.comboChain = 0;
-      this.shake = 260;
-      this.shakeStrength = 7;
-      this.giantCarrot.face = Math.floor(this.rng() * 6);
-      this.burst(p.x + p.width / 2, p.y + p.height / 2, 14, ["#ffffff", "#93c5fd", "#fca5a5"], 220);
-      const wasMax = this.lives >= MAX_HEARTS;
-      this.lives -= 1;
-      if (wasMax) {
-        this.sparkleTrail.length = 0;
-        this.setGolden(false);
-      }
-      if (this.lives <= 0) {
-        this.lives = 0;
-        this.gameOver();
-        return true;
-      }
-      p.invincible = true;
-      p.invincibilityTimer = 1.0;
-      return false;
+      return this.damagePlayer(o.type);
     };
     for (const o of this.projectiles) if (hazard(o)) return;
     for (const o of obs) if (hazard(o)) return;
 
+    // Lightning strikes hit anything in their column while active
+    for (const st of this.strikes) {
+      if (st.kind !== "lightning" || t < st.warnUntil || t > st.endAt) continue;
+      if (p.x + p.width > st.x - st.w / 2 && p.x < st.x + st.w / 2) {
+        if (p.shieldTimer > 0) continue;
+        if (this.vulnerable && this.damagePlayer("lightning")) return;
+      }
+    }
+
     // Near miss: a hazard came within a few px while you were vulnerable, then moved away
     if (mechanicUnlocked("near_miss", this.level)) {
-      const vulnerable = !this.damageDisabled && p.shieldTimer <= 0 && p.speedBoostTimer <= 0 && !(p.invincible && p.invincibilityTimer > 0);
+      const vulnerable = this.vulnerable && p.shieldTimer <= 0;
       const check = (o: Entity) => {
-        if (!o.active || (o.type !== "spike" && o.type !== "ball") || o.near === 2) return;
+        if (!o.active || !HARMFUL.has(o.type) || o.near === 2) return;
         const gx = Math.max(o.x - (p.x + p.width), p.x - (o.x + o.width), 0);
         const gy = Math.max(o.y - (p.y + p.height), p.y - (o.y + o.height), 0);
         const gap = Math.hypot(gx, gy);
@@ -817,7 +898,7 @@ export class GameEngine {
         case "powerup_speed":
           this.events.sfx("powerup_speed");
           p.speedBoostTimer = 5.0;
-          p.speed = BASE_SPEED * 1.5;
+          p.speed = this.baseSpeed * 1.5;
           this.setLoop("rapid_rabbit_loop", true);
           this.giantCarrot.face = Math.floor(this.rng() * 6);
           break;
@@ -860,6 +941,146 @@ export class GameEngine {
     compact(this.collectibles);
   }
 
+  /** Can be hurt right now (no Rapid Rabbit, no post-hit invincibility, not a demo). */
+  get vulnerable() {
+    const p = this.player;
+    return !this.damageDisabled && p.speedBoostTimer <= 0 && !(p.invincible && p.invincibilityTimer > 0);
+  }
+
+  /** Take one hit. Returns true if it ended the game. */
+  private damagePlayer(cause: string): boolean {
+    const p = this.player;
+    this.stats.deathCause = cause;
+    this.events.sfx("hit_damage");
+    p.stunned = 0.5;
+    p.hitFlash = 0.18;
+    this.comboChain = 0;
+    this.shake = 260;
+    this.shakeStrength = 7;
+    this.giantCarrot.face = Math.floor(this.rng() * 6);
+    this.burst(p.x + p.width / 2, p.y + p.height / 2, 14, ["#ffffff", "#93c5fd", "#fca5a5"], 220);
+    const wasMax = this.lives >= MAX_HEARTS;
+    this.lives -= 1;
+    if (wasMax) {
+      this.sparkleTrail.length = 0;
+      this.setGolden(false);
+    }
+    if (this.lives <= 0) {
+      this.lives = 0;
+      this.gameOver();
+      return true;
+    }
+    p.invincible = true;
+    p.invincibilityTimer = 1.0;
+    return false;
+  }
+
+  /**
+   * Tier hazards that aren't plain falling balls: Brussels sprouts bursting, homing beets,
+   * icicle and lightning columns, meteor radishes and snow gusts.
+   */
+  private updateTierHazards(dt: number, t: number) {
+    const p = this.player;
+    const W = this.W;
+    const vS = this.vScale;
+    const fall = this.fallSpeed;
+    const chance = (rate: number) => rate > 0 && this.rng() < 1 - Math.exp(-rate * dt);
+
+    // Brussels sprouts burst into three small sprouts shortly after leaving the carrot
+    for (const o of this.projectiles) {
+      if (!o.active || o.type !== "sprout" || o.born == null || t - o.born < 550) continue;
+      o.active = false;
+      const cx = o.x + o.width / 2;
+      const cy = o.y + o.height / 2;
+      const base = Math.atan2(o.vy, o.vx);
+      const v = Math.hypot(o.vx, o.vy);
+      for (const da of [-0.4, 0, 0.4]) {
+        this.projectiles.push({ x: cx - 8, y: cy - 8, width: 16, height: 16, type: "sprout_small", vx: Math.cos(base + da) * v, vy: Math.sin(base + da) * v, active: true, angle: 0 });
+      }
+      this.burst(cx, cy, 6, ["#4ade80", "#16a34a"], 120);
+      this.events.sfx("sprout_pop");
+    }
+
+    // Homing beets steer toward the bunny (limited turn rate) and fizzle out after 8 s
+    for (const o of this.obstacles) {
+      if (!o.active || o.type !== "beet") continue;
+      if (o.born != null && t - o.born > 8000) {
+        o.active = false;
+        this.burst(o.x + o.width / 2, o.y + o.height / 2, 8, ["#9d174d", "#be185d"], 100);
+        continue;
+      }
+      if (o.y < 0) continue; // still entering
+      const want = Math.atan2(p.y + p.height / 2 - (o.y + o.height / 2), p.x + p.width / 2 - (o.x + o.width / 2));
+      const cur = Math.atan2(o.vy, o.vx);
+      let d = want - cur;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const turn = Math.max(-1.6 * dt, Math.min(1.6 * dt, d));
+      const v = 140 * vS;
+      o.vx = Math.cos(cur + turn) * v;
+      o.vy = Math.sin(cur + turn) * v;
+    }
+
+    // Column hazards: a warning stripe first, then an icicle drops / lightning strikes
+    if (chance(hazardRate(this.level, (r) => r.icicleRate))) {
+      this.strikes.push({ kind: "icicle", x: 20 + this.rng() * (W - 40), w: 26, warnUntil: t + 900, endAt: t + 900 });
+    }
+    if (chance(hazardRate(this.level, (r) => r.lightningRate))) {
+      this.strikes.push({ kind: "lightning", x: 30 + this.rng() * (W - 60), w: 38, warnUntil: t + 1000, endAt: t + 1250 });
+    }
+    let j = 0;
+    for (const st of this.strikes) {
+      if (st.kind === "icicle" && t >= st.warnUntil) {
+        this.obstacles.push({ x: st.x - 9, y: -50, width: 18, height: 46, type: "icicle", vx: 0, vy: 720 * vS, active: true });
+        this.events.sfx("icicle");
+        continue;
+      }
+      if (st.kind === "lightning" && t >= st.warnUntil && t - dt * 1000 < st.warnUntil) {
+        this.events.sfx("lightning");
+        this.shake = Math.max(this.shake, 120);
+        this.shakeStrength = Math.max(this.shakeStrength, 4);
+      }
+      if (t > st.endAt + (st.kind === "lightning" ? 250 : 0)) continue; // lightning glow lingers (no damage)
+      this.strikes[j++] = st;
+    }
+    this.strikes.length = j;
+
+    // Meteor radishes streak in diagonally from a top corner (entering off-screen first, so the
+    // edge warning marker shows before they arrive)
+    if (chance(hazardRate(this.level, (r) => r.meteorRate))) {
+      const fromLeft = this.rng() < 0.5;
+      const ang = Math.PI / 2 + (fromLeft ? -1 : 1) * (0.45 + this.rng() * 0.25);
+      const v = 520 * vS;
+      const x = fromLeft ? this.rng() * W * 0.4 : W * 0.6 + this.rng() * W * 0.4;
+      const lead = 0.5; // seconds above the screen
+      this.obstacles.push({ x: x - 15 - Math.cos(ang) * v * lead, y: -30 - Math.sin(ang) * v * lead, width: 30, height: 30, type: "meteor", vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, active: true, angle: ang });
+    }
+    if (chance(hazardRate(this.level, (r) => r.beetRate))) {
+      this.obstacles.push({ x: 20 + this.rng() * (W - 60), y: -40 - fall * BALL_TELEGRAPH_S, width: 30, height: 30, type: "beet", vx: 0, vy: fall, active: true, born: t });
+    }
+
+    // Snow gusts: a warning, then ~3 s of sideways wind that pushes the bunny and everything falling
+    if (t >= this.nextGustAt) {
+      const gust = tierForLevel(this.level).rates.gustEvery;
+      const dir = this.rng() < 0.5 ? -1 : 1;
+      this.wind = { dir, warnAt: t, start: t + 700, end: t + 3500, strength: 110 * vS };
+      this.events.sfx("wind");
+      this.nextGustAt = gust ? t + lerpRange(gust, tierProgress(this.level)) * 1000 * (0.75 + this.rng() * 0.5) : Infinity;
+    }
+    if (this.wind && t > this.wind.end) this.wind = null;
+    if (this.wind && t >= this.wind.start) {
+      const push = this.wind.dir * this.wind.strength;
+      p.x += push * dt;
+      this.clampPlayer();
+      const drift = (o: Entity) => {
+        if (o.type === "icicle" || o.type === "meteor" || o.type === "beet" || o.type === "player_laser") return;
+        o.vx += (push * 0.8 - o.vx) * Math.min(1, 1.5 * dt);
+      };
+      for (const o of this.obstacles) if (o.active) drift(o);
+      for (const o of this.collectibles) if (o.active) drift(o);
+    }
+  }
+
   private maxHeartsBlast(t: number) {
     const p = this.player;
     this.maxHeartsBlastStart = t;
@@ -877,8 +1098,9 @@ export class GameEngine {
       if (!proj.active || proj.type === "player_laser") continue;
       if (Math.hypot(proj.x + proj.width / 2 - px, proj.y + proj.height / 2 - py) < R) proj.active = false;
     }
+    this.strikes = this.strikes.filter((st) => Math.abs(st.x - px) >= R);
     for (const ball of this.obstacles) {
-      if (!ball.active || ball.type !== "ball") continue;
+      if (!ball.active || !HARMFUL.has(ball.type)) continue;
       const bx = ball.x + ball.width / 2;
       const by = ball.y + ball.height / 2;
       if (Math.hypot(bx - px, by - py) < R) {

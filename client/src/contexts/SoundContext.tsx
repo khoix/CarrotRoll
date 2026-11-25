@@ -86,7 +86,12 @@ export type SfxId =
   | "near_miss"
   | "combo_up"
   | "golden_carrot"
-  | "rotten_carrot";
+  | "rotten_carrot"
+  | "tier_up"
+  | "sprout_pop"
+  | "icicle"
+  | "lightning"
+  | "wind";
 
 /** Gapless looping beds. `golden_bunny_loop` is a full music track, handled as a music override. */
 export type AmbientId = "rapid_rabbit_loop" | "attract_loop" | "golden_bunny_loop" | "static_endgame";
@@ -111,6 +116,11 @@ const SFX_FILES: Record<SfxId, string> = {
   combo_up: "combo_up.wav",
   golden_carrot: "golden_carrot.wav",
   rotten_carrot: "rotten_carrot.wav",
+  tier_up: "tier_up.wav",
+  sprout_pop: "sprout_pop.wav",
+  icicle: "icicle.wav",
+  lightning: "lightning.wav",
+  wind: "wind.wav",
 };
 
 const AMBIENT_FILES: Record<BufferAmbientId, string> = {
@@ -150,6 +160,8 @@ const SFX_THROTTLE_MS: Partial<Record<SfxId, number>> = {
   blaster_shoot: 60,
   near_miss: 120,
   combo_up: 150,
+  sprout_pop: 80,
+  icicle: 120,
 };
 const MAX_VOICES_PER_SFX = 4;
 const MAX_VOICES_TOTAL = 16;

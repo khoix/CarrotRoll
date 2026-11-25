@@ -100,7 +100,7 @@ export class HazeLayer {
       const r = Math.hypot(w, h) / 2;
       const g = ctx.createRadialGradient(w / 2, h / 2, r * 0.55, w / 2, h / 2, r);
       g.addColorStop(0, "rgba(0,0,0,0)");
-      g.addColorStop(1, "rgba(0,0,0,0.28)");
+      g.addColorStop(1, `rgba(0,0,0,${this.vignetteStrength})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
     }
@@ -138,6 +138,16 @@ export class HazeLayer {
       ctx.globalAlpha = prevAlpha;
     }
   }
+
+  /** Theme the haze (tiers): colour "r,g,b", strength at the top and bottom, vignette darkness. */
+  setTheme(color: string, far: number, near: number, vignette: number): void {
+    this.params = { ...this.params, color, farStrength: far, nearStrength: near };
+    this.vignetteStrength = vignette;
+    this.gradient = null;
+    this.vignette = null;
+  }
+
+  private vignetteStrength = 0.28;
 
   /** Edge vignette; draw after gameplay layers you want framed. */
   renderVignette(ctx: CanvasRenderingContext2D): void {

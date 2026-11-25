@@ -7,6 +7,108 @@ import { HazeLayer } from "@/lib/HazeLayer";
 import { drawEarthBackground } from "@/lib/drawEarthBackground";
 import { SpriteCache, blit, drawCarrotFace, drawRabbit, type PowerupType } from "./art";
 import { ATTRACT_FADE_THRESHOLD, COUNTDOWN_MS, type GameEngine } from "./engine";
+import type { ParticleKind, TierTheme } from "./tiers";
+
+const CROSSFADE_S = 2;
+
+type Ambient = { x: number; y: number; vx: number; vy: number; size: number; phase: number; spin: number; hue: number };
+
+/** Theme particles drifting over the background (leaves, snow, rain, stars and fireflies). Visual only. */
+class AmbientParticles {
+  kind: ParticleKind = "none";
+  private items: Ambient[] = [];
+  private seed = 1;
+  private rand() {
+    this.seed = (this.seed * 16807) % 2147483647;
+    return this.seed / 2147483647;
+  }
+  reset(kind: ParticleKind, W: number, H: number, quality: number) {
+    this.kind = kind;
+    const base = { none: 0, leaves: 18, snow: 55, rain: 70, stars: 70 }[kind];
+    const n = quality === 2 ? Math.round(base / 2) : base;
+    this.items = Array.from({ length: n }, () => this.spawn(W, H, true));
+  }
+  private spawn(W: number, H: number, anywhere: boolean): Ambient {
+    const r = () => this.rand();
+    const y = anywhere ? r() * H : -10;
+    switch (this.kind) {
+      case "leaves":
+        return { x: r() * W, y, vx: 20 + r() * 40, vy: 40 + r() * 40, size: 4 + r() * 4, phase: r() * 6, spin: 1 + r() * 2, hue: 18 + r() * 30 };
+      case "snow":
+        return { x: r() * W, y, vx: 0, vy: 30 + r() * 50, size: 1.2 + r() * 2.2, phase: r() * 6, spin: 0.6 + r(), hue: 0 };
+      case "rain":
+        return { x: r() * W, y, vx: -90, vy: 700 + r() * 300, size: 10 + r() * 10, phase: 0, spin: 0, hue: 0 };
+      default: // stars (first 60 are fixed twinkles; the rest fireflies)
+        return { x: r() * W, y: r() * H, vx: (r() - 0.5) * 20, vy: (r() - 0.5) * 20, size: 0.8 + r() * 1.6, phase: r() * 6, spin: 1 + r() * 2, hue: r() };
+    }
+  }
+  update(dt: number, W: number, H: number, windVx: number) {
+    if (this.kind === "none") return;
+    this.items.forEach((a, i) => {
+      if (this.kind === "stars") {
+        if (a.hue > 0.85) {
+          a.x += (a.vx + Math.sin(a.phase + a.y * 0.02) * 10) * dt;
+          a.y += a.vy * dt;
+          if (a.x < 0 || a.x > W) a.vx = -a.vx;
+          if (a.y < 0 || a.y > H) a.vy = -a.vy;
+        }
+        return;
+      }
+      a.phase += a.spin * dt;
+      a.x += (a.vx + windVx + (this.kind === "snow" ? Math.sin(a.phase) * 18 : 0)) * dt;
+      a.y += a.vy * dt;
+      if (a.y > H + 20 || a.x < -40 || a.x > W + 40) this.items[i] = { ...this.spawn(W, H, false), x: this.rand() * (W + 80) - 40 };
+    });
+  }
+  draw(ctx: CanvasRenderingContext2D, time: number) {
+    switch (this.kind) {
+      case "leaves":
+        for (const a of this.items) {
+          ctx.save();
+          ctx.translate(a.x, a.y);
+          ctx.rotate(a.phase);
+          ctx.fillStyle = `hsla(${a.hue}, 80%, 45%, 0.85)`;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, a.size, a.size * 0.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        break;
+      case "snow":
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        for (const a of this.items) {
+          ctx.beginPath();
+          ctx.arc(a.x, a.y, a.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      case "rain":
+        ctx.strokeStyle = "rgba(200,215,235,0.35)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (const a of this.items) {
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(a.x - a.vx * 0.02, a.y - a.size);
+        }
+        ctx.stroke();
+        break;
+      case "stars":
+        for (const a of this.items) {
+          const tw = 0.5 + 0.5 * Math.sin(time / 400 * a.spin + a.phase);
+          if (a.hue > 0.85) {
+            ctx.fillStyle = `rgba(253, 230, 138, ${0.35 + 0.5 * tw})`;
+            ctx.beginPath();
+            ctx.arc(a.x, a.y, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.fillStyle = `rgba(255,255,255,${0.25 + 0.6 * tw})`;
+            ctx.fillRect(a.x, a.y, a.size, a.size);
+          }
+        }
+        break;
+    }
+  }
+}
 
 const RIPPLE_PERIOD_MS = 900;
 const RIPPLE_MAX_RADIUS_FACTOR = 1.5;
@@ -18,7 +120,12 @@ export type Quality = 0 | 1 | 2;
 export class Renderer {
   sprites: SpriteCache;
   scroller: BackgroundScroller | null = null;
+  /** Previous tier's background while it crossfades out (elapsed s). */
+  private fading: { scroller: BackgroundScroller; t: number } | null = null;
   haze: HazeLayer;
+  private ambient = new AmbientParticles();
+  private theme: TierTheme | null = null;
+  private quality: Quality = 0;
   private carrotBody: { canvas: HTMLCanvasElement; w: number; scale: number } | null = null;
   private W: number;
   private H: number;
@@ -43,7 +150,9 @@ export class Renderer {
     this.H = h;
     this.haze.resize(w, h);
     this.scroller?.resize(w, h);
+    this.fading?.scroller.resize(w, h);
     this.carrotBody = null;
+    if (this.theme) this.ambient.reset(this.theme.particles, w, h, this.quality);
   }
 
   setScroller(s: BackgroundScroller) {
@@ -51,17 +160,46 @@ export class Renderer {
     this.scroller = s;
   }
 
+  /** Switch to a tier's look. With `crossfade`, the old background fades out over 2 s. */
+  setTheme(theme: TierTheme, scroller: BackgroundScroller | null, crossfade: boolean) {
+    this.theme = theme;
+    this.haze.setTheme(theme.haze.color, theme.haze.far, theme.haze.near, theme.vignette);
+    this.ambient.reset(theme.particles, this.W, this.H, this.quality);
+    if (!scroller) return;
+    scroller.resize(this.W, this.H);
+    if (crossfade && this.scroller && this.scroller !== scroller) this.fading = { scroller: this.scroller, t: 0 };
+    this.scroller = scroller;
+  }
+
+  setQuality(q: Quality) {
+    if (q === this.quality) return;
+    this.quality = q;
+    if (this.theme) this.ambient.reset(this.theme.particles, this.W, this.H, q);
+  }
+
   /** Background, haze and water shimmer. `dtS` drives scrolling (real time; pass 0 to freeze). */
-  renderBackground(ctx: CanvasRenderingContext2D, dtS: number, timeMs: number, quality: Quality) {
+  renderBackground(ctx: CanvasRenderingContext2D, dtS: number, timeMs: number, quality: Quality, windVx = 0) {
+    this.setQuality(quality);
     const s = this.scroller;
+    const f = this.fading;
+    if (f) {
+      f.t += dtS;
+      f.scroller.update(dtS);
+      f.scroller.render(ctx);
+      if (f.t >= CROSSFADE_S) this.fading = null;
+    }
     if (s) {
       s.update(dtS);
+      if (f) ctx.globalAlpha = Math.min(1, f.t / CROSSFADE_S);
       s.render(ctx);
-    } else {
+      ctx.globalAlpha = 1;
+    } else if (!f) {
       drawEarthBackground(ctx, this.W, this.H, timeMs);
     }
     this.haze.render(ctx, timeMs / 1000);
     if (s && quality < 2) s.renderWaterShimmer(ctx);
+    this.ambient.update(dtS, this.W, this.H, windVx);
+    this.ambient.draw(ctx, timeMs);
   }
 
   private getCarrotBody(scale: number) {
@@ -126,6 +264,57 @@ export class Renderer {
     drawCarrotFace(ctx, e.giantCarrot.face ?? 0, 0, 0, 58);
     ctx.restore();
 
+    // --- Column warnings and lightning ---
+    for (const st of e.strikes) {
+      const x0 = st.x - st.w / 2;
+      if (time < st.warnUntil) {
+        const k = 1 - (st.warnUntil - time) / (st.kind === "icicle" ? 900 : 1000);
+        const flick = st.kind === "lightning" ? 0.6 + 0.4 * Math.sin(time / 35) : 1;
+        ctx.fillStyle = st.kind === "icicle" ? `rgba(165, 243, 252, ${(0.12 + 0.22 * k) * flick})` : `rgba(253, 224, 71, ${(0.1 + 0.25 * k) * flick})`;
+        ctx.fillRect(x0, 0, st.w, e.H);
+        ctx.strokeStyle = st.kind === "icicle" ? `rgba(14, 116, 144, ${0.4 + 0.4 * k})` : `rgba(202, 138, 4, ${0.4 + 0.4 * k})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let c = 0; c < 3; c++) {
+          const cy = 14 + c * 12 + ((time / 8) % 12);
+          ctx.moveTo(st.x - 7, cy);
+          ctx.lineTo(st.x, cy + 7);
+          ctx.lineTo(st.x + 7, cy);
+        }
+        ctx.stroke();
+      } else if (st.kind === "lightning") {
+        // The strike: a jagged bolt with a glow, plus a flash of the column
+        const k = Math.min(1, (time - st.warnUntil) / (st.endAt + 250 - st.warnUntil));
+        ctx.fillStyle = `rgba(254, 249, 195, ${0.45 * (1 - k)})`;
+        ctx.fillRect(x0, 0, st.w, e.H);
+        const pts: [number, number][] = [];
+        for (let y = 0, i = 0; y <= e.H; y += e.H / 12, i++) pts.push([st.x + Math.sin(i * 2.7 + st.x) * st.w * 0.3, y]);
+        for (const [w, c] of [[10, "rgba(253, 224, 71, 0.55)"], [3, "rgba(255, 255, 255, 0.95)"]] as const) {
+          ctx.strokeStyle = c;
+          ctx.lineWidth = w;
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+          ctx.stroke();
+        }
+      }
+    }
+    if (e.wind) {
+      // Gust streaks: faint during the warning, strong while blowing
+      const blowing = time >= e.wind.start;
+      ctx.strokeStyle = `rgba(255,255,255,${blowing ? 0.45 : 0.2})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let i = 0; i < 16; i++) {
+        const y = ((i * 97) % e.H) + Math.sin(time / 300 + i) * 8;
+        const len = 40 + (i % 4) * 15;
+        const x = (((time / 1000) * 520 * e.wind.dir + i * 131) % (W + len) + W + len) % (W + len) - len / 2;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + len * e.wind.dir, y);
+      }
+      ctx.stroke();
+    }
+
     // --- Collectibles ---
     for (const o of e.collectibles) {
       const cx = o.x + o.width / 2;
@@ -187,12 +376,29 @@ export class Renderer {
         ctx.stroke();
         continue;
       }
-      const spr = S.broccoli;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(o.angle ?? 0);
-      if (spr) blit(ctx, spr, 0, 0, o.width / 40);
-      else {
+      if (o.type === "sprout" || o.type === "sprout_small") {
+        blit(ctx, S.sprout, 0, 0, o.width / 26);
+      } else if (o.type === "cauliflower") {
+        blit(ctx, S.cauliflower, 0, 0, o.width / 56);
+        if (o.hp === 1) {
+          // Cracked after one blaster hit
+          ctx.strokeStyle = "rgba(68,64,60,0.85)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-14, -18);
+          ctx.lineTo(-3, -4);
+          ctx.lineTo(-9, 6);
+          ctx.lineTo(4, 18);
+          ctx.moveTo(-3, -4);
+          ctx.lineTo(12, -8);
+          ctx.stroke();
+        }
+      } else if (S.broccoli) {
+        blit(ctx, S.broccoli, 0, 0, o.width / 40);
+      } else {
         ctx.fillStyle = "#22c55e";
         ctx.beginPath();
         ctx.arc(0, 0, o.width / 3, 0, Math.PI * 2);
@@ -206,23 +412,63 @@ export class Renderer {
     for (const o of e.obstacles) {
       const cx = o.x + o.width / 2;
       const cy = o.y + o.height / 2;
-      if (o.type === "ball" && o.y + o.height < 0 && o.vy > 0) {
-        const secondsAway = -(o.y + o.height) / fall;
+      // Still above the screen: a red warning marker where it will enter
+      if (o.y + o.height < 0 && o.vy > 0) {
+        const secondsAway = -(o.y + o.height) / Math.max(o.vy, fall * 0.5);
         const a = Math.max(0, Math.min(1, 1 - secondsAway / 0.7));
         const pulse = 0.75 + 0.25 * Math.sin(time / 60);
-        ctx.fillStyle = `rgba(220, 38, 38, ${0.55 * a * pulse})`;
+        const ex = cx + o.vx * secondsAway;
+        ctx.fillStyle = o.type === "meteor" ? `rgba(219, 39, 119, ${0.7 * a * pulse})` : `rgba(220, 38, 38, ${0.55 * a * pulse})`;
         ctx.beginPath();
-        ctx.moveTo(cx - 9, 3);
-        ctx.lineTo(cx + 9, 3);
-        ctx.lineTo(cx, 15);
+        ctx.moveTo(ex - 9, 3);
+        ctx.lineTo(ex + 9, 3);
+        ctx.lineTo(ex, 15);
         ctx.closePath();
         ctx.fill();
+        continue;
+      }
+      if (o.type === "icicle") {
+        blit(ctx, S.icicle, cx, cy);
+        continue;
+      }
+      if (o.type === "meteor") {
+        const ang = Math.atan2(o.vy, o.vx);
+        // Flaming trail behind it
+        const tx = -Math.cos(ang);
+        const ty = -Math.sin(ang);
+        const g = ctx.createLinearGradient(cx, cy, cx + tx * 70, cy + ty * 70);
+        g.addColorStop(0, "rgba(251, 146, 60, 0.8)");
+        g.addColorStop(0.5, "rgba(244, 63, 94, 0.35)");
+        g.addColorStop(1, "rgba(244, 63, 94, 0)");
+        ctx.strokeStyle = g;
+        ctx.lineCap = "round";
+        ctx.lineWidth = 12;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + tx * 70, cy + ty * 70);
+        ctx.stroke();
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(ang);
+        blit(ctx, S.radish, 0, 0);
+        ctx.restore();
+        continue;
+      }
+      if (o.type === "beet") {
+        ctx.globalAlpha = 0.25 + 0.15 * Math.sin(time / 120);
+        ctx.fillStyle = "#f472b6";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        blit(ctx, S.beet, cx, cy);
         continue;
       }
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(time / 200);
-      if (S.ball) blit(ctx, S.ball, 0, 0, o.width / 40);
+      const spr = o.type === "burr" || o.type === "burr_small" ? S.burr ?? S.ball : S.ball;
+      if (spr) blit(ctx, spr, 0, 0, o.width / 40);
       else {
         ctx.fillStyle = "#1F2937";
         ctx.beginPath();

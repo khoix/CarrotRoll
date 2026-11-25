@@ -217,6 +217,31 @@ sfx.push(
   ["rotten_carrot", () => buzz(140, 0.3, 0.22)],
 );
 
+/** Filtered noise with an attack/decay envelope; lowpass (0..1, smaller = darker). */
+function noise(durationSec, volume, attackSec, lowpass, seed = 7) {
+  const n = Math.floor(SAMPLE_RATE * durationSec);
+  const samples = [];
+  let x = seed;
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    const white = x / 0x3fffffff - 1;
+    y += lowpass * (white - y);
+    const t = i / SAMPLE_RATE;
+    const g = t < attackSec ? t / attackSec : Math.pow(1 - (t - attackSec) / (durationSec - attackSec), 2);
+    samples.push(32767 * volume * g * y);
+  }
+  return samples;
+}
+
+sfx.push(
+  ["tier_up", () => arpeggio([523, 659, 784, 1047], 0.09, 0.24)],
+  ["sprout_pop", () => sweep(900, 300, 0.08, 0.25)],
+  ["icicle", () => sweep(2600, 1500, 0.18, 0.18)],
+  ["lightning", () => noise(0.6, 0.9, 0.005, 0.5, 11)],
+  ["wind", () => noise(1.6, 0.8, 0.6, 0.05, 3)],
+);
+
 const ambient = [
   // Rapid Rabbit: bright, fast-pulsing whir
   ["rapid_rabbit_loop", () => seamlessLoop(2, [

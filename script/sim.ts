@@ -65,6 +65,8 @@ function think(e: GameEngine, bot: BotConfig, rng: () => number) {
   const speed = p.speed * 2.5;
   const threats: Threat[] = [];
   e.forEachThreat((t) => threats.push(t));
+  const zones: { x0: number; x1: number; from: number; to: number }[] = [];
+  e.forEachZone((z) => zones.push(z));
   const floor = e.carrotRestY - 10 - 20 - 18; // keep the bunny's bottom clear of the giant carrot's wobble
   const safeMode = p.speedBoostTimer > 0.4 || (p.invincible && p.invincibilityTimer > 0.4);
 
@@ -86,6 +88,15 @@ function think(e: GameEngine, bot: BotConfig, rng: () => number) {
           const gap = bot.margin - d;
           if (gap > 0) danger += gap * gap * (1 - 0.5 * (tau / bot.lookahead));
         }
+      }
+    }
+    // Column warnings (icicles, lightning): don't be in the column when it goes live
+    if (!safeMode) {
+      for (const z of zones) {
+        const arrive = e.time + travel * 1000;
+        const live = z.from - arrive < bot.lookahead * 1000 + 300 && z.to > e.time;
+        const inside = cx + 20 + bot.margin * 0.5 > z.x0 && cx - 20 - bot.margin * 0.5 < z.x1;
+        if (live && inside) danger += 4000;
       }
     }
     // Stay off the walls a little

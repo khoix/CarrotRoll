@@ -3,10 +3,12 @@
  * level is. The engine reads only these, so pacing and balance are tuned here, not in game code.
  */
 import type { Rng } from "./rng";
+import { TIERS, LEVELS_PER_TIER, lerpRange, tierForLevel, tierProgress } from "./tiers";
+
+export { LEVELS_PER_TIER, TIERS };
 
 /** Completing this level's carrots (or its boss) triggers the ending. */
 export const FINAL_LEVEL = 20;
-export const LEVELS_PER_TIER = 5;
 
 export type CollectibleType =
   | "carrot"
@@ -121,12 +123,14 @@ export interface Difficulty {
   collectibleCap: number;
 }
 
-/** Difficulty for a level. (Phase 1 keeps the original formulas; tiers replace them later.) */
+/** Difficulty for a level, from its tier's table (see tiers.ts). */
 export function difficulty(level: number): Difficulty {
+  const rates = tierForLevel(level).rates;
+  const k = tierProgress(level);
   return {
-    ballChance: 0.01 + level * 0.005,
-    shotSpeed: 300 + level * 20,
-    shotInterval: Math.max(0.5, 2.0 - level * 0.1),
-    collectibleCap: 3 + level,
+    ballChance: lerpRange(rates.ball, k),
+    shotSpeed: lerpRange(rates.shotSpeed, k),
+    shotInterval: lerpRange(rates.shotInterval, k),
+    collectibleCap: Math.min(14, 3 + level),
   };
 }
