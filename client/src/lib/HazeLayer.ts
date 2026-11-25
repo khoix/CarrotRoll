@@ -72,35 +72,75 @@ export class HazeLayer {
     return canvas;
   }
 
+  resize(viewW: number, viewH: number): void {
+    if (viewW === this.viewW && viewH === this.viewH) return;
+    this.params.farStartY = (this.params.farStartY / this.viewH) * viewH;
+    this.viewW = viewW;
+    this.viewH = viewH;
+    this.gradient = null;
+    this.vignette = null;
+  }
+
+  /** Gradient built once per size; the slow pulse is applied through globalAlpha instead. */
+  private gradient: CanvasGradient | null = null;
+  private gradientCtx: CanvasRenderingContext2D | null = null;
+  /** Subtle edge darkening, rendered once per size. */
+  private vignette: HTMLCanvasElement | null = null;
+
+  private ensureVignette(): HTMLCanvasElement {
+    if (this.vignette) return this.vignette;
+    // Low-res is fine: it is a smooth gradient and gets scaled up.
+    const w = Math.max(1, Math.round(this.viewW / 4));
+    const h = Math.max(1, Math.round(this.viewH / 4));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      const r = Math.hypot(w, h) / 2;
+      const g = ctx.createRadialGradient(w / 2, h / 2, r * 0.55, w / 2, h / 2, r);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(0,0,0,0.28)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    this.vignette = c;
+    return c;
+  }
+
   render(ctx: CanvasRenderingContext2D, timeSeconds: number): void {
     if (!this.params.enabled) return;
 
-    const { farStrength, nearStrength, farStartY, color, pulseAmp, pulseSpeed, noiseAmp } =
-      this.params;
+    const { farStrength, nearStrength, farStartY, color, pulseAmp, pulseSpeed, noiseAmp } = this.params;
+    if (!this.gradient || this.gradientCtx !== ctx) {
+      // Built at the pulse peak; globalAlpha scales it down (alpha > 1 would be ignored by canvas).
+      const peak = (farStrength + pulseAmp) / Math.max(0.01, farStrength);
+      const aTop = clamp(farStrength + pulseAmp, 0, 1);
+      const aBottom = clamp(nearStrength * peak, 0, 1);
+      const grad = ctx.createLinearGradient(0, 0, 0, this.viewH);
+      grad.addColorStop(0, `rgba(${color}, 0)`);
+      grad.addColorStop(clamp(farStartY / this.viewH, 0, 1), `rgba(${color}, ${aTop})`);
+      grad.addColorStop(1, `rgba(${color}, ${aBottom})`);
+      this.gradient = grad;
+      this.gradientCtx = ctx;
+    }
     const pulse = pulseAmp * Math.sin(timeSeconds * pulseSpeed * Math.PI * 2);
-    const aTop = clamp(farStrength + pulse, 0, 1);
-    const aBottom = clamp(nearStrength, 0, 1);
-
-    const grad = ctx.createLinearGradient(0, 0, 0, this.viewH);
-    grad.addColorStop(0, `rgba(${color}, 0)`);
-    const startFrac = Math.max(0, Math.min(1, farStartY / this.viewH));
-    grad.addColorStop(startFrac, `rgba(${color}, ${aTop})`);
-    grad.addColorStop(1, `rgba(${color}, ${aBottom})`);
-
-    ctx.save();
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = grad;
+    const prevAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = prevAlpha * clamp((farStrength + pulse) / Math.max(0.01, farStrength + pulseAmp), 0, 1);
+    ctx.fillStyle = this.gradient;
     ctx.fillRect(0, 0, this.viewW, this.viewH);
-    ctx.restore();
+    ctx.globalAlpha = prevAlpha;
 
     if (noiseAmp > 0) {
       const noise = this.ensureNoiseCanvas();
-      ctx.save();
-      ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = clamp(noiseAmp, 0.01, 0.03);
       ctx.drawImage(noise, 0, 0, noise.width, noise.height, 0, 0, this.viewW, this.viewH);
-      ctx.globalAlpha = 1;
-      ctx.restore();
+      ctx.globalAlpha = prevAlpha;
     }
+  }
+
+  /** Edge vignette; draw after gameplay layers you want framed. */
+  renderVignette(ctx: CanvasRenderingContext2D): void {
+    ctx.drawImage(this.ensureVignette(), 0, 0, this.viewW, this.viewH);
   }
 }

@@ -8,8 +8,9 @@ Created by Nya.
 
 - Canvas-based arcade gameplay with scrolling backgrounds and level progression
 - Power-ups: shield, speed, extra lives, and more
-- Touch controls for mobile play
-- Sound effects and in-game music
+- Full-screen mobile play in portrait or landscape: drag anywhere to fly, blasters auto-fire
+- Installable as a home-screen web app (true full screen on iPhone)
+- Sound effects and in-game music (one Web Audio mixer, so volume/mute work on iOS too)
 - Local high score leaderboard
 - Admin tools for score management and ending demos
 
@@ -51,13 +52,25 @@ Optional environment variables:
 | `ADMIN_PASSWORD` | Initial admin password (first run) | `password` |
 | `VITE_BASE_URL` | Public base path for assets/routes | `/` in dev, `/carrotroll/` in production |
 
+### Web preview (GitHub Pages)
+
+`.github/workflows/pages.yml` builds the client as a static site and deploys it to
+`https://<owner>.github.io/<repo>/` on every push to `main` (or run it by hand from the Actions tab).
+
+- One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+- Pages has no server, so the preview keeps high scores **in each player's browser** and leaves out
+  the admin tools. The shared leaderboard needs the full Node app (`npm run build && npm start`).
+- Try the same build locally: `VITE_BASE_URL=/CarrotRoll/ VITE_STATIC_SITE=true npx vite build`.
+
 ## Controls
 
 | Input | Action |
 |-------|--------|
 | WASD / Arrow keys | Move |
 | Spacebar | Fire |
-| Touch controls | Move / fire on mobile |
+| P / Esc | Pause |
+| Touch: drag anywhere | Move (the bunny follows your finger; blasters fire automatically) |
+| Touch: menu → Classic touchpad | Optional on-screen touchpad + fire buttons |
 
 Collect 10 carrots to level up. Avoid the giant carrot, broccoli, and spiky balls.
 
@@ -69,8 +82,16 @@ Collect 10 carrots to level up. Avoid the giant carrot, broccoli, and spiky ball
 | `npm run build` | Build client and server |
 | `npm start` | Run production build |
 | `npm run check` | Typecheck with `tsc` |
-| `npm run generate-sounds` | Generate placeholder sound assets |
+| `npm run generate-sounds` | Fill in any missing sounds with placeholders (never overwrites real ones) |
+| `npm run optimize-assets` | Re-encode masters in `assets-src/` into web assets (needs `ffmpeg`) |
 | `npm run db:push` | Push Drizzle schema |
+
+## Project layout
+
+- `client/src/game/` – the game itself: `engine.ts` (fixed-timestep simulation), `render.ts` (canvas drawing), `art.ts` (sprites, cached at screen resolution), `input.ts` (drag controls)
+- `client/src/components/GameCanvas.tsx` – React host: sizing, input wiring, HUD and overlays
+- `client/src/contexts/SoundContext.tsx` – audio engine
+- `assets-src/` – full-quality master audio/images (not deployed); see its README
 
 ## License
 

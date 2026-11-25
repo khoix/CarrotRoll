@@ -1,0 +1,14 @@
+{
+  "name": "Carrot Roll",
+  "short_name": "Carrot Roll",
+  "description": "Fly as a rabbit, dodge the giant rolling carrot, collect carrots to level up.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [
+    { "src": "apple-touch-icon.png", "sizes": "123x123", "type": "image/png", "purpose": "any" }
+  ]
+}
