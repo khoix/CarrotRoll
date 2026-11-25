@@ -6,6 +6,7 @@ import Level20EndingOverlay from "@/components/Level20EndingOverlay";
 import TouchControls from "@/components/TouchControls";
 import StartMenuCard from "@/components/StartMenuCard";
 import HighScoreList, { HighScoreListContent } from "@/components/HighScoreList";
+import PowerUpList from "@/components/PowerUpList";
 import { useScores } from "@/hooks/use-scores";
 import { useSound } from "@/contexts/SoundContext";
 import { Button } from "@/components/ui/button";
@@ -569,46 +570,7 @@ export default function Home() {
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-2">
                 <div className="bg-indigo-900 rounded-2xl p-6 text-white border-4 border-indigo-950 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.3)]">
-                  <div className="space-y-4">
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-green-500 border-2 border-green-300 shadow-md flex items-center justify-center text-xl">🛡️</div>
-                        <div>
-                            <p className="font-bold text-sm">Carro-Shield</p>
-                            <p className="text-xs text-indigo-200">Projectile Shield</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-yellow-500 border-2 border-yellow-300 shadow-md flex items-center justify-center text-xl">⚡</div>
-                        <div>
-                            <p className="font-bold text-sm">Rapid Rabbit</p>
-                            <p className="text-xs text-indigo-200">Speed + Invincibility</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-cyan-500 border-2 border-cyan-300 shadow-md flex items-center justify-center relative overflow-hidden">
-                          <span className="absolute top-[15%] bottom-[15%] w-1 bg-white rounded-full" style={{ left: "26%" }} aria-hidden />
-                          <span className="absolute top-[15%] bottom-[15%] w-1 bg-white rounded-full" style={{ right: "26%" }} aria-hidden />
-                        </div>
-                        <div>
-                            <p className="font-bold text-sm">Bunny Blasters</p>
-                            <p className="text-xs text-indigo-200">Clear a path! With lasers!</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-red-500 border-2 border-red-300 shadow-md flex items-center justify-center text-xl"><span style={{ display: "inline-block", transform: "rotate(-90deg)" }}>🧲</span></div>
-                        <div>
-                            <p className="font-bold text-sm">Attract-o-Hare</p>
-                            <p className="text-xs text-indigo-200">Carrots, draw closer...</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-rose-500 border-2 border-rose-300 shadow-md flex items-center justify-center text-xl">❤️</div>
-                        <div>
-                            <p className="font-bold text-sm">Heart</p>
-                            <p className="text-xs text-indigo-200">+1 Life</p>
-                        </div>
-                     </div>
-                  </div>
+                  <PowerUpList />
                 </div>
               </CollapsibleContent>
             </Collapsible>
@@ -644,46 +606,7 @@ export default function Home() {
               <HighScoreList onTitleClick={() => setShowLeaderboardOverlay(true)} />
               <div className="bg-indigo-900 rounded-2xl p-6 text-white border-4 border-indigo-950 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.3)] flex-shrink-0">
                 <h3 className="font-display text-2xl mb-4 text-yellow-400">Power-Ups</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-green-500 border-2 border-green-300 shadow-md flex items-center justify-center text-xl">🛡️</div>
-                    <div>
-                      <p className="font-bold text-sm">Carro-Shield</p>
-                      <p className="text-xs text-indigo-200">Projectile Shield</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-yellow-500 border-2 border-yellow-300 shadow-md flex items-center justify-center text-xl">⚡</div>
-                    <div>
-                      <p className="font-bold text-sm">Rapid Rabbit</p>
-                      <p className="text-xs text-indigo-200">Speed + Invincibility</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-cyan-500 border-2 border-cyan-300 shadow-md flex items-center justify-center relative overflow-hidden">
-                      <span className="absolute top-[15%] bottom-[15%] w-1 bg-white rounded-full" style={{ left: "26%" }} aria-hidden />
-                      <span className="absolute top-[15%] bottom-[15%] w-1 bg-white rounded-full" style={{ right: "26%" }} aria-hidden />
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm">Bunny Blasters</p>
-                      <p className="text-xs text-indigo-200">Clear a path! With lasers!</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-red-500 border-2 border-red-300 shadow-md flex items-center justify-center text-xl"><span style={{ display: "inline-block", transform: "rotate(-90deg)" }}>🧲</span></div>
-                    <div>
-                      <p className="font-bold text-sm">Attract-o-Hare</p>
-                      <p className="text-xs text-indigo-200">Carrots, draw closer...</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-rose-500 border-2 border-rose-300 shadow-md flex items-center justify-center text-xl">❤️</div>
-                    <div>
-                      <p className="font-bold text-sm">Heart</p>
-                      <p className="text-xs text-indigo-200">+1 Life</p>
-                    </div>
-                  </div>
-                </div>
+                <PowerUpList columns={2} />
               </div>
             </div>
           </div>

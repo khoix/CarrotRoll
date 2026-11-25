@@ -61,6 +61,13 @@ export type ObjType =
   | "powerup_heart"
   | "powerup_blaster"
   | "powerup_attract"
+  | "powerup_decoy"
+  | "powerup_reflector"
+  | "powerup_bomb"
+  | "powerup_slowmo"
+  | "powerup_rain"
+  | "powerup_shrink"
+  | "powerup_double"
   | "player_laser";
 
 export type SpawnableType = Exclude<ObjType, "player_laser">;
@@ -82,7 +89,12 @@ export type Entity = {
   hp?: number;
   /** Spawn time (ms, sim clock): sprouts burst and beets expire relative to it. */
   born?: number;
+  /** Bounced back by the Broccoli Reflector: harmless to the bunny, flies at the giant carrot. */
+  reflected?: boolean;
 };
+
+/** Shots the Broccoli Reflector can send back. */
+const REFLECTABLE = new Set<ObjType>(["spike", "sprout", "sprout_small"]);
 
 /** Things that hurt the bunny on contact. */
 export const HARMFUL = new Set<ObjType>(["spike", "ball", "burr", "burr_small", "sprout", "sprout_small", "cauliflower", "icicle", "meteor", "beet"]);
@@ -147,6 +159,11 @@ function newPlayer(w: number, h: number) {
     attractTimer: 0,
     stunned: 0,
     hitFlash: 0,
+    reflectTimer: 0,
+    slowTimer: 0,
+    rainTimer: 0,
+    shrinkTimer: 0,
+    doubleTimer: 0,
   };
 }
 
@@ -184,6 +201,12 @@ export class GameEngine {
   private pendingUnlocks: CollectibleType[] = [];
   strikes: Strike[] = [];
   wind: Wind | null = null;
+  /** Decoy Doe: where the cardboard bunny stands and until when (ms). */
+  decoy: { x: number; y: number; until: number } | null = null;
+  /** White screen flash (ms remaining), e.g. after a Bunny Bomb. */
+  flash = 0;
+  private bombThisLevel = false;
+  private rainNextCarrot = 0;
   private nextGustAt = Infinity;
   tierIndex = -1;
   /** Carrots grabbed in the current quick chain, and when the chain expires (ms, sim time). */
@@ -289,6 +312,8 @@ export class GameEngine {
     this.player.speed = this.baseSpeed;
     this.strikes = [];
     this.wind = null;
+    this.decoy = null;
+    this.flash = 0;
     this.nextGustAt = Infinity;
     this.tierIndex = -1;
     this.projectiles = [];
@@ -324,6 +349,7 @@ export class GameEngine {
 
   /** Per-level setup: queue the guaranteed early spawn of anything that unlocks here. */
   private beginLevel(startTime: number) {
+    this.bombThisLevel = false;
     this.pendingUnlocks = itemsUnlockingAt(this.level);
     this.nextUnlockSpawn = startTime + 3000;
     const ti = tierIndexForLevel(this.level);
@@ -411,7 +437,7 @@ export class GameEngine {
   forEachThreat(cb: (t: Threat) => void) {
     for (const arr of [this.projectiles, this.obstacles]) {
       for (const o of arr) {
-        if (o.active && HARMFUL.has(o.type)) cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: Math.max(o.width, o.height) / 2 });
+        if (o.active && !o.reflected && HARMFUL.has(o.type)) cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: Math.max(o.width, o.height) / 2 });
       }
     }
   }
@@ -461,6 +487,10 @@ export class GameEngine {
     const p = this.player;
     this.time += dt * 1000;
     const t = this.time;
+    // Slow-Mo Clover: everything except the bunny runs at half speed. Absolute timers
+    // (warnings, sprout bursts, beet lifetimes, gusts) are pushed back by the time "not spent".
+    const worldDt = p.slowTimer > 0 ? dt * 0.5 : dt;
+    if (worldDt < dt) this.shiftWorldTimers((dt - worldDt) * 1000);
     const isCountdown = this.phase === "countdown";
     const countdownElapsed = t - this.countdownStart;
 
@@ -491,6 +521,16 @@ export class GameEngine {
       if (p.invincibilityTimer <= 0) p.invincible = false;
     }
     if (p.hitFlash > 0) p.hitFlash = Math.max(0, p.hitFlash - dt);
+    if (p.reflectTimer > 0) p.reflectTimer = Math.max(0, p.reflectTimer - dt);
+    if (p.slowTimer > 0) p.slowTimer = Math.max(0, p.slowTimer - dt);
+    if (p.rainTimer > 0) p.rainTimer = Math.max(0, p.rainTimer - dt);
+    if (p.doubleTimer > 0) p.doubleTimer = Math.max(0, p.doubleTimer - dt);
+    if (p.shrinkTimer > 0) {
+      p.shrinkTimer = Math.max(0, p.shrinkTimer - dt);
+      if (p.shrinkTimer <= 0) this.resizePlayer(PLAYER_SIZE);
+    }
+    if (this.decoy && t > this.decoy.until) this.decoy = null;
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 1000);
     if (this.comboChain > 0 && t > this.comboUntil) this.comboChain = 0;
 
     // Giant carrot
@@ -506,11 +546,15 @@ export class GameEngine {
     } else {
       gc.y = this.carrotRestY + Math.sin(t / 200) * 10;
       gc.angle += dt * 5;
-      gc.nextShot -= dt;
+      gc.nextShot -= worldDt;
+      if (gc.nextShot <= 0 && p.rainTimer > 0) gc.nextShot = 0.3; // Carrot Rain: the carrot holds fire
       if (gc.nextShot <= 0) {
         const margin = 40;
         const sourceX = gc.x + margin + this.rng() * (gc.width - 2 * margin);
-        const angle = Math.atan2(p.y - gc.y, p.x - sourceX);
+        // Decoy Doe draws every shot while it stands
+        const aimX = this.decoy ? this.decoy.x - p.width / 2 : p.x;
+        const aimY = this.decoy ? this.decoy.y - p.height / 2 : p.y;
+        const angle = Math.atan2(aimY - gc.y, aimX - sourceX);
         const speed = difficulty(this.level).shotSpeed * this.vScale;
         const cauli = hazardRate(this.level, (r) => r.cauliChance);
         const sprout = hazardRate(this.level, (r) => r.sproutChance);
@@ -528,7 +572,7 @@ export class GameEngine {
       }
     }
 
-    if (!isCountdown) this.updatePlaying(dt, t);
+    if (!isCountdown) this.updatePlaying(worldDt, t, dt);
     this.updateEffects(dt);
   }
 
@@ -615,7 +659,7 @@ export class GameEngine {
     this.clampPlayer();
   }
 
-  private updatePlaying(dt: number, t: number) {
+  private updatePlaying(dt: number, t: number, realDt = dt) {
     const p = this.player;
     const W = this.W;
     const H = this.H;
@@ -637,12 +681,19 @@ export class GameEngine {
 
     const diff = difficulty(this.level);
 
+    // Carrot Rain: a shower of carrots and no new hazards
+    if (p.rainTimer > 0) {
+      if (t >= this.rainNextCarrot) {
+        this.spawnCollectible("carrot");
+        this.rainNextCarrot = t + 150;
+      }
+    }
     // Spiky balls (and, from tier 2, chestnut burrs)
-    if (this.rng() < perStep(diff.ballChance, dt, Math.sqrt(this.widthScale))) {
+    if (p.rainTimer <= 0 && this.rng() < perStep(diff.ballChance, dt, Math.sqrt(this.widthScale))) {
       const burr = this.rng() < hazardRate(this.level, (r) => r.burrShare);
       this.obstacles.push({ x: this.rng() * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: burr ? "burr" : "ball", vx: 0, vy: fall, active: true, hp: burr ? 1 : undefined });
     }
-    this.updateTierHazards(dt, t);
+    this.updateTierHazards(dt, t, p.rainTimer <= 0);
 
     // Guaranteed first spawn of anything that unlocks on this level
     if (this.pendingUnlocks.length && t >= this.nextUnlockSpawn) {
@@ -653,7 +704,11 @@ export class GameEngine {
     // Collectibles
     // Collectibles arrive at the same rate on every screen shape (narrow phones aren't starved of carrots)
     if (this.collectibles.length < diff.collectibleCap && this.rng() < perStep(0.02, dt, Math.pow(this.widthScale, 0.25))) {
-      this.spawnCollectible(pickCollectible(this.level, this.rng));
+      let pick = pickCollectible(this.level, this.rng);
+      if (pick === "powerup_bomb" && this.bombThisLevel) pick = "carrot"; // one bomb per level at most
+      if (pick === "powerup_slowmo" && p.slowTimer > 0) pick = "carrot";
+      if (pick === "powerup_bomb") this.bombThisLevel = true;
+      this.spawnCollectible(pick);
     }
 
     // Move entities
@@ -804,7 +859,19 @@ export class GameEngine {
 
     // Hazards vs player
     const hazard = (o: Entity) => {
-      if (!o.active || !HARMFUL.has(o.type) || !overlaps(p, o)) return false;
+      if (!o.active || o.reflected || !HARMFUL.has(o.type) || !overlaps(p, o)) return false;
+      if (p.reflectTimer > 0 && REFLECTABLE.has(o.type)) {
+        // Broccoli Reflector: send it back down at the giant carrot
+        const v = Math.max(300 * this.vScale, Math.hypot(o.vx, o.vy));
+        const tx = this.W / 2 + (this.rng() - 0.5) * this.W * 0.6;
+        const ang = Math.atan2(this.giantCarrot.y + 40 - (o.y + o.height / 2), tx - (o.x + o.width / 2));
+        o.vx = Math.cos(ang) * v;
+        o.vy = Math.sin(ang) * v;
+        o.reflected = true;
+        this.events.sfx("reflect");
+        this.addScore(5, o.x + o.width / 2, o.y);
+        return false;
+      }
       if (p.shieldTimer > 0) {
         if (t - this.lastDeflect >= 500) {
           this.lastDeflect = t;
@@ -839,7 +906,7 @@ export class GameEngine {
     if (mechanicUnlocked("near_miss", this.level)) {
       const vulnerable = this.vulnerable && p.shieldTimer <= 0;
       const check = (o: Entity) => {
-        if (!o.active || !HARMFUL.has(o.type) || o.near === 2) return;
+        if (!o.active || o.reflected || !HARMFUL.has(o.type) || o.near === 2) return;
         const gx = Math.max(o.x - (p.x + p.width), p.x - (o.x + o.width), 0);
         const gy = Math.max(o.y - (p.y + p.height), p.y - (o.y + o.height), 0);
         const gap = Math.hypot(gx, gy);
@@ -854,9 +921,11 @@ export class GameEngine {
       for (const o of obs) check(o);
     }
 
-    // Collectibles vs player
+    // Collectibles vs player (Double Trouble's ghost collects carrots too)
+    const ghost = this.ghost;
     for (const o of this.collectibles) {
-      if (!o.active || !overlaps(p, o)) continue;
+      if (!o.active) continue;
+      if (!overlaps(p, o) && !(ghost && isGoodCarrot(o.type) && overlaps(ghost, o))) continue;
       o.active = false;
       this.stats.pickups[o.type] = (this.stats.pickups[o.type] ?? 0) + 1;
       const ox = o.x + o.width / 2;
@@ -913,6 +982,37 @@ export class GameEngine {
           this.setLoop("attract_loop", true);
           this.giantCarrot.face = Math.floor(this.rng() * 6);
           break;
+        case "powerup_decoy":
+          this.events.sfx("powerup_decoy");
+          this.decoy = { x: p.x + p.width / 2, y: p.y + p.height / 2, until: t + 6000 };
+          this.giantCarrot.face = 2;
+          break;
+        case "powerup_reflector":
+          this.events.sfx("powerup_reflector");
+          p.reflectTimer = 8;
+          break;
+        case "powerup_bomb":
+          this.events.sfx("bomb");
+          this.bunnyBomb(t);
+          break;
+        case "powerup_slowmo":
+          this.events.sfx("powerup_slowmo");
+          p.slowTimer = 5;
+          break;
+        case "powerup_rain":
+          this.events.sfx("powerup_rain");
+          p.rainTimer = 3;
+          this.rainNextCarrot = t;
+          break;
+        case "powerup_shrink":
+          this.events.sfx("powerup_shrink");
+          p.shrinkTimer = 8;
+          this.resizePlayer(PLAYER_SIZE / 2);
+          break;
+        case "powerup_double":
+          this.events.sfx("powerup_double");
+          p.doubleTimer = 8;
+          break;
         case "powerup_heart": {
           this.events.sfx("powerup_heart");
           const next = Math.min(this.lives + 1, MAX_HEARTS);
@@ -936,9 +1036,72 @@ export class GameEngine {
       return;
     }
 
+    // Reflected shots that reach the giant carrot splat on it
+    for (const o of this.projectiles) {
+      if (!o.active || !o.reflected || o.y + o.height / 2 < this.giantCarrot.y + 10) continue;
+      o.active = false;
+      this.burst(o.x + o.width / 2, this.giantCarrot.y + 10, 8, ["#4ade80", "#16a34a", "#fde68a"], 160);
+      this.onReflectedHit();
+    }
+
     compact(this.projectiles);
     compact(this.obstacles);
     compact(this.collectibles);
+  }
+
+  /** A reflected shot hit the giant carrot (bosses take damage from this in boss fights). */
+  protected onReflectedHit() {
+    this.giantCarrot.face = 3;
+  }
+
+  /** Resize the bunny around its centre (Shrinking Violet). */
+  private resizePlayer(size: number) {
+    const p = this.player;
+    const cx = p.x + p.width / 2;
+    const cy = p.y + p.height / 2;
+    p.width = size;
+    p.height = size;
+    p.x = cx - size / 2;
+    p.y = cy - size / 2;
+    this.clampPlayer();
+  }
+
+  /** Bunny Bomb: everything harmful on screen is destroyed. */
+  private bunnyBomb(t: number) {
+    let n = 0;
+    for (const arr of [this.projectiles, this.obstacles]) {
+      for (const o of arr) {
+        if (!o.active || o.reflected || !HARMFUL.has(o.type)) continue;
+        o.active = false;
+        if (n < 12) this.explosions.push({ x: o.x + o.width / 2, y: o.y + o.height / 2, start: t, dur: 450 });
+        n++;
+      }
+    }
+    this.strikes = [];
+    this.flash = 350;
+    this.shake = 350;
+    this.shakeStrength = 9;
+    if (n) this.addScore(5 * n, this.player.x + this.player.width / 2, this.player.y - 10, true, `BOOM! +${5 * n}`);
+  }
+
+  /** Slow-Mo: push back absolute timers so they also run at half speed. */
+  private shiftWorldTimers(ms: number) {
+    for (const st of this.strikes) {
+      st.warnUntil += ms;
+      st.endAt += ms;
+    }
+    for (const arr of [this.projectiles, this.obstacles]) for (const o of arr) if (o.born != null) o.born += ms;
+    if (this.wind) {
+      this.wind.start += ms;
+      this.wind.end += ms;
+    }
+    if (Number.isFinite(this.nextGustAt)) this.nextGustAt += ms;
+  }
+
+  /** Double Trouble's ghost: the bunny mirrored across the playfield. */
+  get ghost() {
+    const p = this.player;
+    return this.player.doubleTimer > 0 ? { x: this.W - p.x - p.width, y: p.y, width: p.width, height: p.height } : null;
   }
 
   /** Can be hurt right now (no Rapid Rabbit, no post-hit invincibility, not a demo). */
@@ -979,12 +1142,12 @@ export class GameEngine {
    * Tier hazards that aren't plain falling balls: Brussels sprouts bursting, homing beets,
    * icicle and lightning columns, meteor radishes and snow gusts.
    */
-  private updateTierHazards(dt: number, t: number) {
+  private updateTierHazards(dt: number, t: number, allowSpawns = true) {
     const p = this.player;
     const W = this.W;
     const vS = this.vScale;
     const fall = this.fallSpeed;
-    const chance = (rate: number) => rate > 0 && this.rng() < 1 - Math.exp(-rate * dt);
+    const chance = (rate: number) => allowSpawns && rate > 0 && this.rng() < 1 - Math.exp(-rate * dt);
 
     // Brussels sprouts burst into three small sprouts shortly after leaving the carrot
     for (const o of this.projectiles) {

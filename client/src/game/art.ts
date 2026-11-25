@@ -237,7 +237,44 @@ export function drawCarrotFace(ctx: CanvasRenderingContext2D, expression: number
   ctx.restore();
 }
 
-export type PowerupType = "powerup_invincible" | "powerup_speed" | "powerup_blaster" | "powerup_heart" | "powerup_attract";
+export type PowerupType =
+  | "powerup_invincible"
+  | "powerup_speed"
+  | "powerup_blaster"
+  | "powerup_heart"
+  | "powerup_attract"
+  | "powerup_decoy"
+  | "powerup_reflector"
+  | "powerup_bomb"
+  | "powerup_slowmo"
+  | "powerup_rain"
+  | "powerup_shrink"
+  | "powerup_double";
+
+export const POWERUP_TYPES: PowerupType[] = [
+  "powerup_invincible",
+  "powerup_speed",
+  "powerup_blaster",
+  "powerup_heart",
+  "powerup_attract",
+  "powerup_decoy",
+  "powerup_reflector",
+  "powerup_bomb",
+  "powerup_slowmo",
+  "powerup_rain",
+  "powerup_shrink",
+  "powerup_double",
+];
+
+/** A little bunny head (circle + ears) for icons. */
+function bunnyHead(ctx: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  ctx.beginPath();
+  ctx.ellipse(x - s * 0.35, y - s * 0.75, s * 0.2, s * 0.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(x + s * 0.35, y - s * 0.75, s * 0.2, s * 0.5, 0, 0, Math.PI * 2);
+  ctx.moveTo(x + s * 0.6, y);
+  ctx.arc(x, y, s * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+}
 
 /** Power-up icon centred on (0,0), size w×h (shield / bolt / blasters / heart / magnet). */
 export function drawPowerup(ctx: CanvasRenderingContext2D, type: PowerupType, w: number, h: number) {
@@ -303,13 +340,94 @@ export function drawPowerup(ctx: CanvasRenderingContext2D, type: PowerupType, w:
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-  } else {
+  } else if (type === "powerup_attract") {
     box("#DC2626", "#F87171");
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = `${Math.round(h * 0.72)}px sans-serif`;
     ctx.rotate(-Math.PI / 2);
     ctx.fillText("🧲", 0, 0);
+  } else if (type === "powerup_decoy") {
+    box("#B45309", "#FCD34D");
+    ctx.fillStyle = "#FDE68A";
+    bunnyHead(ctx, 0, hh * 0.25, hw * 0.55);
+    ctx.fillStyle = "#78350F";
+    ctx.fillRect(-1.2, hh * 0.55, 2.4, hh * 0.4);
+  } else if (type === "powerup_reflector") {
+    box("#059669", "#6EE7B7");
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, hh * 0.15, hw * 0.5, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(hw * 0.5, -hh * 0.05);
+    ctx.lineTo(hw * 0.68, hh * 0.35);
+    ctx.lineTo(hw * 0.25, hh * 0.25);
+    ctx.closePath();
+    ctx.fill();
+  } else if (type === "powerup_bomb") {
+    box("#111827", "#F97316");
+    ctx.fillStyle = "#374151";
+    ctx.beginPath();
+    ctx.arc(-hw * 0.05, hh * 0.12, hw * 0.48, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#D1D5DB";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(hw * 0.2, -hh * 0.3);
+    ctx.quadraticCurveTo(hw * 0.45, -hh * 0.75, hw * 0.65, -hh * 0.55);
+    ctx.stroke();
+    ctx.fillStyle = "#FBBF24";
+    ctx.beginPath();
+    ctx.arc(hw * 0.65, -hh * 0.55, hw * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === "powerup_slowmo") {
+    box("#0D9488", "#5EEAD4");
+    ctx.fillStyle = "#ffffff";
+    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+      ctx.beginPath();
+      ctx.arc(dx * hw * 0.24, dy * hh * 0.24, hw * 0.26, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(hw * 0.2, hh * 0.5, hw * 0.05, hh * 0.8);
+    ctx.stroke();
+  } else if (type === "powerup_rain") {
+    box("#0284C7", "#7DD3FC");
+    ctx.fillStyle = "#FB923C";
+    for (const [dx, dy] of [[-0.45, -0.3], [0.15, -0.5], [-0.1, 0.25], [0.5, 0.1]] as const) {
+      ctx.beginPath();
+      ctx.moveTo(dx * hw - 3, dy * hh - 4);
+      ctx.lineTo(dx * hw + 3, dy * hh - 4);
+      ctx.lineTo(dx * hw, dy * hh + 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else if (type === "powerup_shrink") {
+    box("#7C3AED", "#C4B5FD");
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 4; i++) {
+      ctx.save();
+      ctx.rotate((i * Math.PI) / 2);
+      ctx.beginPath();
+      ctx.moveTo(0, -hh * 0.2);
+      ctx.lineTo(-hw * 0.22, -hh * 0.62);
+      ctx.lineTo(hw * 0.22, -hh * 0.62);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  } else {
+    box("#DB2777", "#F9A8D4");
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    bunnyHead(ctx, -hw * 0.3, hh * 0.25, hw * 0.4);
+    ctx.fillStyle = "#ffffff";
+    bunnyHead(ctx, hw * 0.3, hh * 0.25, hw * 0.4);
   }
 }
 
@@ -671,8 +789,7 @@ export class SpriteCache {
 
   constructor(scale: number) {
     this.scale = scale;
-    const types: PowerupType[] = ["powerup_invincible", "powerup_speed", "powerup_blaster", "powerup_heart", "powerup_attract"];
-    for (const t of types) this.powerups[t] = makeSprite(34, 34, scale, 17, 17, (c) => { c.translate(17, 17); drawPowerup(c, t, 30, 30); });
+    for (const t of POWERUP_TYPES) this.powerups[t] = makeSprite(34, 34, scale, 17, 17, (c) => { c.translate(17, 17); drawPowerup(c, t, 30, 30); });
     for (const v of ["normal", "gold", "attract"] as const) {
       // 40×40 rabbit; tufts reach ±27 and ears ~9 above its box, so pad the sprite.
       this.rabbits[v] = makeSprite(64, 68, scale, 32, 38, (c) => drawRabbit(c, 32, 38, 40, 40, v));

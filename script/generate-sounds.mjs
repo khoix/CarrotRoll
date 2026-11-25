@@ -242,6 +242,17 @@ sfx.push(
   ["wind", () => noise(1.6, 0.8, 0.6, 0.05, 3)],
 );
 
+sfx.push(
+  ["powerup_decoy", () => [...noise(0.12, 0.6, 0.002, 0.25, 5), ...tone(220, 0.12, 0.25)]],
+  ["powerup_reflector", () => arpeggio([880, 1320, 1760], 0.06, 0.2)],
+  ["bomb", () => noise(1.1, 1.0, 0.004, 0.12, 19)],
+  ["powerup_slowmo", () => sweep(900, 180, 0.6, 0.25)],
+  ["powerup_rain", () => arpeggio([1047, 1319, 1568, 2093, 1568, 2093], 0.05, 0.2)],
+  ["powerup_shrink", () => sweep(1200, 400, 0.3, 0.22)],
+  ["powerup_double", () => [...tone(660, 0.07, 0.22), ...tone(990, 0.07, 0.22)]],
+  ["reflect", () => sweep(700, 1600, 0.09, 0.2)],
+);
+
 const ambient = [
   // Rapid Rabbit: bright, fast-pulsing whir
   ["rapid_rabbit_loop", () => seamlessLoop(2, [

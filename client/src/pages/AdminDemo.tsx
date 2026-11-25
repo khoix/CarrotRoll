@@ -20,6 +20,13 @@ const SPAWNABLE_ENTRIES: { type: SpawnableType; label: string }[] = [
   { type: "powerup_speed", label: "Speed" },
   { type: "powerup_blaster", label: "Blaster" },
   { type: "powerup_attract", label: "Attract" },
+  { type: "powerup_decoy", label: "Decoy Doe" },
+  { type: "powerup_reflector", label: "Reflector" },
+  { type: "powerup_bomb", label: "Bunny Bomb" },
+  { type: "powerup_slowmo", label: "Slow-Mo" },
+  { type: "powerup_rain", label: "Carrot Rain" },
+  { type: "powerup_shrink", label: "Shrink" },
+  { type: "powerup_double", label: "Double" },
 ];
 
 const defaultSpawnCounts = Object.fromEntries(SPAWNABLE_ENTRIES.map((e) => [e.type, 1])) as Partial<Record<SpawnableType, number>>;

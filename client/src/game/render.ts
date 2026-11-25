@@ -376,6 +376,12 @@ export class Renderer {
         ctx.stroke();
         continue;
       }
+      if (o.reflected) {
+        ctx.fillStyle = "rgba(110, 231, 183, 0.45)";
+        ctx.beginPath();
+        ctx.arc(cx, cy, o.width * 0.62, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(o.angle ?? 0);
@@ -498,6 +504,35 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
+    // --- Decoy Doe (cardboard bunny on a stake) ---
+    if (e.decoy) {
+      const left = e.decoy.until - time;
+      ctx.globalAlpha = left < 1000 ? Math.max(0, left / 1000) * (0.6 + 0.4 * Math.sin(time / 60)) : 1;
+      const dx = e.decoy.x;
+      const dy = e.decoy.y + Math.sin(time / 200) * 2;
+      ctx.fillStyle = "#92400E";
+      ctx.fillRect(dx - 2, dy + 10, 4, 22);
+      ctx.fillStyle = "#D6A15E";
+      ctx.strokeStyle = "#78350F";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(dx - 9, dy - 18, 5, 13, 0, 0, Math.PI * 2);
+      ctx.ellipse(dx + 9, dy - 18, 5, 13, 0, 0, Math.PI * 2);
+      ctx.moveTo(dx + 17, dy);
+      ctx.ellipse(dx, dy, 17, 15, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Target rings painted on
+      ctx.strokeStyle = "rgba(220, 38, 38, 0.8)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(dx, dy, 9, 0, Math.PI * 2);
+      ctx.moveTo(dx + 3.5, dy);
+      ctx.arc(dx, dy, 3.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     // --- Player ---
     const pw = p.width;
     const ph = p.height;
@@ -574,12 +609,36 @@ export class Renderer {
     if (isSpeed && speedFlicker) overlayAlpha = 0.5 + Math.sin(time / 70) * 0.5;
     ctx.globalAlpha = isAttract && p.attractTimer < ATTRACT_FADE_THRESHOLD ? p.attractTimer / ATTRACT_FADE_THRESHOLD : overlayAlpha;
 
-    blit(ctx, S.shadow, cx, cy);
+    const k = pw / 40; // Shrinking Violet draws the bunny smaller
+    // Double Trouble: a translucent ghost mirrored across the playfield
+    const ghost = e.ghost;
+    if (ghost) {
+      const prev = ctx.globalAlpha;
+      ctx.globalAlpha = prev * (p.doubleTimer < 1.5 ? 0.25 + 0.2 * Math.sin(time / 70) : 0.45);
+      const gspr = S.rabbits.normal;
+      if (gspr) blit(ctx, gspr, ghost.x + ghost.width / 2, ghost.y + ghost.height / 2, k);
+      ctx.globalAlpha = prev;
+    }
+    blit(ctx, S.shadow, cx, cy, k);
     if (isSpeed) {
-      drawRabbit(ctx, cx, cy, pw, ph, "speed", time);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(k, k);
+      drawRabbit(ctx, 0, 0, 40, 40, "speed", time);
+      ctx.restore();
     } else {
       const spr = S.rabbits[isMax ? "gold" : isAttract ? "attract" : "normal"];
-      if (spr) blit(ctx, spr, cx, cy);
+      if (spr) blit(ctx, spr, cx, cy, k);
+    }
+    if (p.reflectTimer > 0 && (p.reflectTimer > 1.5 || Math.floor(time / 90) % 2 === 0)) {
+      ctx.strokeStyle = "rgba(52, 211, 153, 0.9)";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([7, 5]);
+      ctx.lineDashOffset = -time / 30;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 30 * k + 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     ctx.globalAlpha = overlayAlpha;
 
@@ -627,6 +686,16 @@ export class Renderer {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+
+    // --- Slow-Mo tint and Bunny Bomb flash ---
+    if (p.slowTimer > 0) {
+      ctx.fillStyle = `rgba(45, 212, 191, ${p.slowTimer < 1 ? 0.12 * p.slowTimer : 0.12})`;
+      ctx.fillRect(0, 0, W, e.H);
+    }
+    if (e.flash > 0) {
+      ctx.fillStyle = `rgba(255, 255, 255, ${(e.flash / 350) * 0.75})`;
+      ctx.fillRect(0, 0, W, e.H);
+    }
 
     // --- Score popups ---
     if (e.popups.length) {
