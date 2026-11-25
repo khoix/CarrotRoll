@@ -1,7 +1,10 @@
 /**
  * Generates placeholder WAV files for Carrot Roll.
- * Run: node script/generate-sounds.mjs
+ * Run: node script/generate-sounds.mjs [--force]
  * Output: client/public/sounds/*.wav
+ *
+ * Existing files are never overwritten unless --force is passed, so running this
+ * only fills in sounds that are missing (real recordings are kept).
  */
 import fs from "fs";
 import path from "path";
@@ -118,6 +121,27 @@ function musicLoop(durationSec, volume = 0.15) {
   return samples;
 }
 
+/**
+ * Seamless loop: every frequency is a whole number of Hz and the duration is a whole
+ * number of seconds, so the waveform ends exactly where it began (no click at the loop point).
+ */
+function seamlessLoop(durationSec, voices, tremoloHz, tremoloDepth, volume) {
+  const n = Math.floor(SAMPLE_RATE * durationSec);
+  const samples = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / SAMPLE_RATE;
+    let s = 0;
+    for (const { freq, gain, vibHz = 0, vibDepth = 0 } of voices) {
+      // Phase of a vibrato'd sine: 2πft + (depth/vibHz)·sin(2π·vibHz·t) — periodic over whole seconds
+      const phase = 2 * Math.PI * freq * t + (vibHz ? (vibDepth / vibHz) * Math.sin(2 * Math.PI * vibHz * t) : 0);
+      s += gain * Math.sin(phase);
+    }
+    const trem = 1 - tremoloDepth * (0.5 + 0.5 * Math.sin(2 * Math.PI * tremoloHz * t));
+    samples.push(32767 * volume * trem * s);
+  }
+  return samples;
+}
+
 function explosionTone() {
   const durationSec = 0.22;
   const n = Math.floor(SAMPLE_RATE * durationSec);
@@ -150,21 +174,33 @@ const sfx = [
   ["ui_click", () => tone(600, 0.05, 0.25)],
 ];
 
+const ambient = [
+  // Rapid Rabbit: bright, fast-pulsing whir
+  ["rapid_rabbit_loop", () => seamlessLoop(2, [
+    { freq: 220, gain: 0.5, vibHz: 6, vibDepth: 12 },
+    { freq: 330, gain: 0.35 },
+    { freq: 660, gain: 0.12 },
+  ], 8, 0.6, 0.16)],
+  // Attract-o-Hare: slow magnetic warble
+  ["attract_loop", () => seamlessLoop(2, [
+    { freq: 150, gain: 0.55, vibHz: 3, vibDepth: 20 },
+    { freq: 225, gain: 0.3, vibHz: 3, vibDepth: 30 },
+  ], 2, 0.4, 0.16)],
+];
+
 const music = [
   ["music_menu", () => musicLoop(4, 0.12)],
-  ["music_ingame", () => musicLoop(6, 0.1)],
   ["music_gameover", () => musicLoop(3, 0.1)],
 ];
 
-console.log("Generating placeholder sounds in", OUT_DIR);
-for (const [name, gen] of sfx) {
-  const samples = gen();
-  writeWav(path.join(OUT_DIR, `${name}.wav`), samples);
-  console.log("  ", name + ".wav");
-}
-for (const [name, gen] of music) {
-  const samples = gen();
-  writeWav(path.join(OUT_DIR, `${name}.wav`), samples);
+const force = process.argv.includes("--force");
+console.log("Generating placeholder sounds in", OUT_DIR, force ? "(overwriting)" : "(missing files only)");
+for (const [name, gen] of [...sfx, ...ambient, ...music]) {
+  const out = path.join(OUT_DIR, `${name}.wav`);
+  // Music ships as .m4a; treat an existing encoded file as present too.
+  const encoded = path.join(OUT_DIR, `${name}.m4a`);
+  if (!force && (fs.existsSync(out) || fs.existsSync(encoded))) continue;
+  writeWav(out, gen());
   console.log("  ", name + ".wav");
 }
 console.log("Done.");

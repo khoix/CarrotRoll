@@ -664,11 +664,11 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(({ onStateChang
   // --- Background scroller assets; use base-relative paths and fallback tile if image missing ---
   useEffect(() => {
     let cancelled = false;
-    loadImage("images/baseTile.png")
+    loadImage("images/baseTile.webp")
       .then((baseTile) => {
         if (cancelled) return;
         Promise.all([
-          loadImage("images/detailTile.png").catch(() => null),
+          loadImage("images/detailTile.webp").catch(() => null),
           loadImage("images/waterMask.png").catch(() => null),
         ]).then(([detailTile, waterMask]) => {
           if (cancelled) return;

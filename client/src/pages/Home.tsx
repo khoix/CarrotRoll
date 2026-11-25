@@ -36,7 +36,7 @@ import { useLocation } from "wouter";
 type GameState = "menu" | "countdown" | "playing" | "gameover" | "level_transition" | "level20_ending";
 
 const SOUNDS_BASE = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "") + "/sounds/";
-const PRECACHE_URLS = ["music_menu.wav", "music_ingame01.wav"];
+const PRECACHE_URLS = ["music_menu.m4a"];
 
 export default function Home() {
   const [, setLocation] = useLocation();

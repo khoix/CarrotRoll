@@ -120,8 +120,8 @@ const ENDGAME_REVEAL_START_MS = 20000; // 30s before scroll ends: start music an
 const ENDGAME_FADE_DURATION_MS = 15000;
 
 const SOUNDS_BASE = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "") + "/sounds/";
-const STATIC_ENDGAME_SRC = `${SOUNDS_BASE}static_endgame.wav`.replace(/\/+/g, "/");
-const ENDGAME_MUSIC_SRC = `${SOUNDS_BASE}music_endgame01.wav`.replace(/\/+/g, "/");
+const STATIC_ENDGAME_SRC = `${SOUNDS_BASE}static_endgame.m4a`.replace(/\/+/g, "/");
+const ENDGAME_MUSIC_SRC = `${SOUNDS_BASE}music_endgame01.m4a`.replace(/\/+/g, "/");
 
 // Slideshow constants
 const SLIDESHOW_TOTAL_MS = 240000;
@@ -159,7 +159,7 @@ type Slide = {
 
 function buildSlideshowTimeline(isMobile: boolean): Slide[] {
   const basePath = isMobile ? ENDGAME_IMAGES_BASE_MOBILE : ENDGAME_IMAGES_BASE;
-  const ext = isMobile ? "jpg" : "png";
+  const ext = "webp";
   const BASE_POOL_MS = SLIDESHOW_TOTAL_MS - SLIDESHOW_LAST_MS;
   const BASE_MS = BASE_POOL_MS / 17;
   const SHORT = new Map([
@@ -958,7 +958,7 @@ export default function Level20EndingOverlay({ captureDataUrl, preexistingStatic
                 const img = e.currentTarget;
                 const idx = img.dataset.slideIndex;
                 if (idx != null && isMobile) {
-                  img.src = `${ENDGAME_IMAGES_BASE_FALLBACK}${String(Number(idx) + 1).padStart(2, "0")}.png`.replace(/\/+/g, "/");
+                  img.src = `${ENDGAME_IMAGES_BASE_FALLBACK}${String(Number(idx) + 1).padStart(2, "0")}.webp`.replace(/\/+/g, "/");
                 }
               }}
             />
@@ -982,7 +982,7 @@ export default function Level20EndingOverlay({ captureDataUrl, preexistingStatic
                 const img = e.currentTarget;
                 const idx = img.dataset.slideIndex;
                 if (idx != null && isMobile) {
-                  img.src = `${ENDGAME_IMAGES_BASE_FALLBACK}${String(Number(idx) + 1).padStart(2, "0")}.png`.replace(/\/+/g, "/");
+                  img.src = `${ENDGAME_IMAGES_BASE_FALLBACK}${String(Number(idx) + 1).padStart(2, "0")}.webp`.replace(/\/+/g, "/");
                 }
               }}
             />
