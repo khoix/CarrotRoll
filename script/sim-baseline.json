@@ -1,0 +1,60 @@
+{
+  "world": "desktop",
+  "runs": 200,
+  "seed0": 1000,
+  "date": "2026-11-25",
+  "summaries": [
+    {
+      "bot": "casual",
+      "runs": 200,
+      "finalLevel": 20,
+      "endingRate": 27.5,
+      "levelMedian": 18,
+      "levelP25": 16,
+      "levelP75": 20,
+      "reachRate": {
+        "L5": 99,
+        "L10": 99,
+        "L15": 87,
+        "L20": 28
+      },
+      "secondsPerLevel": {
+        "L1-5": 22,
+        "L6-10": 21,
+        "L11-15": 22,
+        "L16-20": 23
+      },
+      "deaths": {
+        "spike": 55,
+        "ball": 18
+      },
+      "medianRunMinutes": 6.2
+    },
+    {
+      "bot": "expert",
+      "runs": 200,
+      "finalLevel": 20,
+      "endingRate": 83,
+      "levelMedian": 20,
+      "levelP25": 20,
+      "levelP75": 20,
+      "reachRate": {
+        "L5": 100,
+        "L10": 100,
+        "L15": 100,
+        "L20": 83
+      },
+      "secondsPerLevel": {
+        "L1-5": 20,
+        "L6-10": 19,
+        "L11-15": 21,
+        "L16-20": 22
+      },
+      "deaths": {
+        "spike": 11,
+        "ball": 6
+      },
+      "medianRunMinutes": 6.4
+    }
+  ]
+}

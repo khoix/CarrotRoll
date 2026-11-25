@@ -26,6 +26,24 @@ import { validateName } from "@shared/schema";
 import { BASE_H, BASE_W, GameEngine, type HudState, type Phase, type SpawnableType } from "@/game/engine";
 import { Renderer, type Quality } from "@/game/render";
 import { attachDragControls } from "@/game/input";
+import { GameBanner, useBannerQueue } from "@/components/GameBanners";
+
+const SEEN_KEY = "carrotroll_seen_items";
+function loadSeen(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(SEEN_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function saveSeen(ids: Iterable<string>) {
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(ids)));
+  } catch {
+    // storage unavailable
+  }
+}
 
 export type { SpawnableType } from "@/game/engine";
 
@@ -176,8 +194,14 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     const soundRef = useRef(sound);
     soundRef.current = sound;
 
+    const banners = useBannerQueue();
+    const bannersRef = useRef(banners);
+    bannersRef.current = banners;
+
     if (!engineRef.current) {
       engineRef.current = new GameEngine({
+        announce: (a) => bannersRef.current.push(a),
+        discovered: () => saveSeen(engineRef.current!.seenItems),
         sfx: (id) => soundRef.current.playSfx(id),
         ambient: (id, on) => (on ? soundRef.current.playAmbient(id) : soundRef.current.stopAmbient(id)),
         goldenBunny: (on) => {
@@ -206,10 +230,15 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     }
     const engine = engineRef.current;
     engine.damageDisabled = damageDisabled;
+    useState(() => {
+      for (const id of loadSeen()) engine.seenItems.add(id);
+      return null;
+    });
     if (import.meta.env.DEV) (window as unknown as { __game?: GameEngine }).__game = engine;
 
     useEffect(() => {
       onStateChangeRef.current?.(gameState);
+      if (gameState !== "playing" && gameState !== "countdown") bannersRef.current.clear();
     }, [gameState]);
 
     // --- Pause ---
@@ -758,6 +787,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           )}
           {children}
         </div>
+        {isActive && !paused && <GameBanner banner={banners.current} />}
         {!fillViewport && fullscreenSupported && (
           <Button
             {...({

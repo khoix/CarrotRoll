@@ -8,6 +8,8 @@
  * - React only receives coarse events (HUD changes, phase changes, sounds), never per-frame state.
  */
 import type { SfxId } from "@/contexts/SoundContext";
+import { mulberry32, randomSeed, type Rng } from "./rng";
+import { FINAL_LEVEL, difficulty, itemForEntity, itemsUnlockingAt, pickCollectible, type CollectibleType, type ItemDef } from "./content";
 
 export const BASE_W = 800;
 export const BASE_H = 600;
@@ -62,13 +64,25 @@ export type HudState = { score: number; level: number; carrots: number; lives: n
 export type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string; gravity: number };
 export type Popup = { x: number; y: number; text: string; start: number; color: string; big?: boolean };
 
+export type Announcement = { kind: "new" | "tier" | "boss"; title: string; body?: string };
+
 export interface EngineEvents {
   sfx(id: SfxId): void;
   ambient(id: "rapid_rabbit_loop" | "attract_loop", on: boolean): void;
   goldenBunny(on: boolean): void;
   hud(h: HudState): void;
   phase(p: Phase): void;
+  /** Short non-blocking banner (first appearance of an item, new tier, boss). */
+  announce?(a: Announcement): void;
+  /** An item was seen for the first time on this device (host persists it). */
+  discovered?(id: string): void;
 }
+
+/** A harmful thing's centre, velocity and radius (used by near-miss scoring and the simulation bots). */
+export type Threat = { x: number; y: number; vx: number; vy: number; r: number };
+
+/** Run statistics for the balance simulator. */
+export type RunStats = { levelStart: number; levelTimes: number[]; deathCause: string | null; pickups: Record<string, number> };
 
 type Keys = { w: boolean; a: boolean; s: boolean; d: boolean; ArrowUp: boolean; ArrowLeft: boolean; ArrowDown: boolean; ArrowRight: boolean; space: boolean };
 
@@ -116,6 +130,15 @@ export class GameEngine {
   /** Simulation clock in ms (stops while paused). */
   time = 0;
   private acc = 0;
+  /** All gameplay randomness comes from here (seeded per game). */
+  rng: Rng = mulberry32(randomSeed());
+  seed = 0;
+  /** Item ids already seen on this device (the host loads and saves it). */
+  seenItems = new Set<string>();
+  stats: RunStats = { levelStart: 0, levelTimes: [], deathCause: null, pickups: {} };
+  /** Items unlocking on this level, waiting for their guaranteed first spawn. */
+  private pendingUnlocks: ItemDef[] = [];
+  private nextUnlockSpawn = 0;
 
   score = 0;
   level = 1;
@@ -202,7 +225,9 @@ export class GameEngine {
     this.clampPlayer();
   }
 
-  start(initialLevel = 1) {
+  start(initialLevel = 1, seed = randomSeed()) {
+    this.seed = seed >>> 0;
+    this.rng = mulberry32(this.seed);
     this.player = newPlayer(this.W, this.H);
     this.projectiles = [];
     this.obstacles = [];
@@ -211,7 +236,7 @@ export class GameEngine {
     this.particles = [];
     this.popups = [];
     this.sparkleTrail = [];
-    this.giantCarrot = { x: 0, y: this.H + 180, width: this.W, height: 200, angle: 0, nextShot: 0, face: Math.floor(Math.random() * 6) };
+    this.giantCarrot = { x: 0, y: this.H + 180, width: this.W, height: 200, angle: 0, nextShot: 0, face: Math.floor(this.rng() * 6) };
     this.score = 0;
     this.level = initialLevel;
     this.carrots = 0;
@@ -227,8 +252,16 @@ export class GameEngine {
     this.paused = false;
     this.acc = 0;
     this.countdownStart = this.time;
+    this.stats = { levelStart: this.time + COUNTDOWN_MS, levelTimes: [], deathCause: null, pickups: {} };
+    this.beginLevel(this.time + COUNTDOWN_MS);
     this.setPhase("countdown");
     this.emitHud(true);
+  }
+
+  /** Per-level setup: queue the guaranteed early spawn of anything that unlocks here. */
+  private beginLevel(startTime: number) {
+    this.pendingUnlocks = itemsUnlockingAt(this.level);
+    this.nextUnlockSpawn = startTime + 3000;
   }
 
   /** Leave play without game-over (menu / unmount). */
@@ -238,7 +271,8 @@ export class GameEngine {
   }
 
   setLevel(n: number) {
-    this.level = Math.max(1, Math.min(19, Math.floor(n)));
+    this.level = Math.max(1, Math.min(FINAL_LEVEL - 1, Math.floor(n)));
+    this.beginLevel(this.time);
     this.emitHud();
   }
 
@@ -278,8 +312,18 @@ export class GameEngine {
       vx: 0,
       vy: this.fallSpeed,
       active: true,
-      ...(type === "carrot" && { face: Math.floor(Math.random() * 6) }),
+      ...(type === "carrot" && { face: Math.floor(this.rng() * 6) }),
     });
+  }
+
+  /** Every harmful thing currently in play (for near-miss checks and the simulation bots). */
+  forEachThreat(cb: (t: Threat) => void) {
+    for (const o of this.projectiles) {
+      if (o.active && o.type === "spike") cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: o.width / 2 });
+    }
+    for (const o of this.obstacles) {
+      if (o.active && o.type === "ball") cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: o.width / 2 });
+    }
   }
 
   /** Advance by one display frame's worth of real time (ms). */
@@ -365,12 +409,12 @@ export class GameEngine {
       gc.nextShot -= dt;
       if (gc.nextShot <= 0) {
         const margin = 40;
-        const sourceX = gc.x + margin + Math.random() * (gc.width - 2 * margin);
+        const sourceX = gc.x + margin + this.rng() * (gc.width - 2 * margin);
         const angle = Math.atan2(p.y - gc.y, p.x - sourceX);
-        const speed = (300 + this.level * 20) * this.vScale;
+        const speed = difficulty(this.level).shotSpeed * this.vScale;
         this.projectiles.push({ x: sourceX, y: gc.y, width: 40, height: 40, type: "spike", vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, active: true, angle: 0 });
         this.events.sfx("carrot_shoot");
-        gc.nextShot = Math.max(0.5, 2.0 - this.level * 0.1);
+        gc.nextShot = difficulty(this.level).shotInterval;
       }
     }
 
@@ -481,32 +525,22 @@ export class GameEngine {
       this.events.sfx("blaster_shoot");
     }
 
+    const diff = difficulty(this.level);
+
     // Spiky balls
-    if (Math.random() < perStep(0.01 + this.level * 0.005, dt, this.widthScale)) {
-      this.obstacles.push({ x: Math.random() * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: "ball", vx: 0, vy: fall, active: true });
+    if (this.rng() < perStep(diff.ballChance, dt, this.widthScale)) {
+      this.obstacles.push({ x: this.rng() * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: "ball", vx: 0, vy: fall, active: true });
+    }
+
+    // Guaranteed first spawn of anything that unlocks on this level
+    if (this.pendingUnlocks.length && t >= this.nextUnlockSpawn) {
+      this.spawnCollectible(this.pendingUnlocks.shift()!.entity);
+      this.nextUnlockSpawn = t + 3000;
     }
 
     // Collectibles
-    if (this.collectibles.length < 3 + this.level && Math.random() < perStep(0.02, dt, this.widthScale)) {
-      const r = Math.random();
-      let type: SpawnableType = "carrot";
-      if (r < 0.05) type = "powerup_heart";
-      else if (r > 0.92) type = "powerup_blaster";
-      else if (r > 0.83) type = "powerup_invincible";
-      else if (r > 0.7) type = "powerup_speed";
-      else if (r > 0.58) type = "powerup_attract";
-      const size = type === "carrot" ? 40 : 30;
-      this.collectibles.push({
-        x: Math.random() * (W - (type === "carrot" ? 50 : 40)),
-        y: -50,
-        width: size,
-        height: size,
-        type,
-        vx: 0,
-        vy: fall,
-        active: true,
-        ...(type === "carrot" && { face: Math.floor(Math.random() * 6) }),
-      });
+    if (this.collectibles.length < diff.collectibleCap && this.rng() < perStep(0.02, dt, this.widthScale)) {
+      this.spawnCollectible(pickCollectible(this.level, this.rng));
     }
 
     // Move entities
@@ -584,7 +618,7 @@ export class GameEngine {
         const ey = ball.y + ball.height / 2;
         this.explode(ex, ey, t);
         this.addScore(5, ex, ey);
-        if (Math.random() < 0.1) {
+        if (this.rng() < 0.1) {
           this.collectibles.push({ x: ball.x, y: ball.y, width: 30, height: 30, type: "powerup_heart", vx: 0, vy: fall, active: true });
         }
         for (const other of obs) {
@@ -630,12 +664,13 @@ export class GameEngine {
       }
       if (this.damageDisabled || p.speedBoostTimer > 0 || (p.invincible && p.invincibilityTimer > 0)) return false;
       o.active = false;
+      this.stats.deathCause = o.type;
       this.events.sfx("hit_damage");
       p.stunned = 0.5;
       p.hitFlash = 0.18;
       this.shake = 260;
       this.shakeStrength = 7;
-      this.giantCarrot.face = Math.floor(Math.random() * 6);
+      this.giantCarrot.face = Math.floor(this.rng() * 6);
       this.burst(p.x + p.width / 2, p.y + p.height / 2, 14, ["#ffffff", "#93c5fd", "#fca5a5"], 220);
       const wasMax = this.lives >= MAX_HEARTS;
       this.lives -= 1;
@@ -659,6 +694,7 @@ export class GameEngine {
     for (const o of this.collectibles) {
       if (!o.active || !overlaps(p, o)) continue;
       o.active = false;
+      this.stats.pickups[o.type] = (this.stats.pickups[o.type] ?? 0) + 1;
       const ox = o.x + o.width / 2;
       const oy = o.y + o.height / 2;
       switch (o.type) {
@@ -676,25 +712,25 @@ export class GameEngine {
         case "powerup_invincible":
           this.events.sfx("powerup_shield");
           p.shieldTimer = 5.0;
-          this.giantCarrot.face = Math.floor(Math.random() * 6);
+          this.giantCarrot.face = Math.floor(this.rng() * 6);
           break;
         case "powerup_speed":
           this.events.sfx("powerup_speed");
           p.speedBoostTimer = 5.0;
           p.speed = BASE_SPEED * 1.5;
           this.setLoop("rapid_rabbit_loop", true);
-          this.giantCarrot.face = Math.floor(Math.random() * 6);
+          this.giantCarrot.face = Math.floor(this.rng() * 6);
           break;
         case "powerup_blaster":
           this.events.sfx("powerup_speed");
           p.blasterTimer = 10.0;
-          this.giantCarrot.face = Math.floor(Math.random() * 6);
+          this.giantCarrot.face = Math.floor(this.rng() * 6);
           break;
         case "powerup_attract":
           this.events.sfx("powerup_attract");
           p.attractTimer = 6.0;
           this.setLoop("attract_loop", true);
-          this.giantCarrot.face = Math.floor(Math.random() * 6);
+          this.giantCarrot.face = Math.floor(this.rng() * 6);
           break;
         case "powerup_heart": {
           this.events.sfx("powerup_heart");
@@ -710,6 +746,7 @@ export class GameEngine {
     // Giant carrot = instant death
     const safe = this.damageDisabled || (p.invincible && p.invincibilityTimer > 0) || p.speedBoostTimer > 0;
     if (!safe && overlaps(p, this.giantCarrot)) {
+      this.stats.deathCause = "giant_carrot";
       this.lives = 0;
       this.sparkleTrail.length = 0;
       this.shake = 400;
@@ -753,6 +790,28 @@ export class GameEngine {
     this.burst(px, py, 40, ["#fffde7", "#ffd700", "#ffecb3", "#ffffff"], 420);
   }
 
+  /** Spawn a collectible at the top; announces items the device hasn't seen before. */
+  private spawnCollectible(type: CollectibleType) {
+    const size = type === "carrot" ? 40 : 30;
+    this.collectibles.push({
+      x: this.rng() * (this.W - (type === "carrot" ? 50 : 40)),
+      y: -50,
+      width: size,
+      height: size,
+      type,
+      vx: 0,
+      vy: this.fallSpeed,
+      active: true,
+      ...(type === "carrot" && { face: Math.floor(this.rng() * 6) }),
+    });
+    const item = itemForEntity(type);
+    if (item && !this.seenItems.has(item.id)) {
+      this.seenItems.add(item.id);
+      this.events.discovered?.(item.id);
+      this.events.announce?.({ kind: "new", title: item.name, body: item.blurb });
+    }
+  }
+
   private explode(x: number, y: number, t: number) {
     this.events.sfx("ball_explode");
     this.explosions.push({ x, y, start: t, dur: 400 });
@@ -760,9 +819,11 @@ export class GameEngine {
   }
 
   private levelUp() {
-    if (this.level >= 19) {
+    this.stats.levelTimes.push((this.time - this.stats.levelStart) / 1000);
+    this.stats.levelStart = this.time;
+    if (this.level >= FINAL_LEVEL - 1) {
       this.stopAllLoops();
-      this.level = 20;
+      this.level = FINAL_LEVEL;
       this.carrots = 0;
       this.emitHud(true);
       this.setPhase("ending");
@@ -771,13 +832,14 @@ export class GameEngine {
     this.events.sfx("level_up");
     this.level += 1;
     this.carrots = 0;
-    this.giantCarrot.face = Math.floor(Math.random() * 6);
+    this.beginLevel(this.time);
+    this.giantCarrot.face = Math.floor(this.rng() * 6);
     // In-canvas celebration (replaces the full-page DOM confetti)
     const colors = ["#f97316", "#22c55e", "#3b82f6", "#eab308", "#ec4899", "#ffffff"];
     for (let i = 0; i < 70; i++) {
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6;
-      const sp = 300 + Math.random() * 450;
-      this.particles.push({ x: this.W / 2 + (Math.random() - 0.5) * 80, y: this.H * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 1.2 + Math.random() * 0.6, size: 3 + Math.random() * 3, color: colors[i % colors.length], gravity: 700 });
+      const a = -Math.PI / 2 + (this.rng() - 0.5) * 1.6;
+      const sp = 300 + this.rng() * 450;
+      this.particles.push({ x: this.W / 2 + (this.rng() - 0.5) * 80, y: this.H * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 1.2 + this.rng() * 0.6, size: 3 + this.rng() * 3, color: colors[i % colors.length], gravity: 700 });
     }
     this.pushPopup({ x: this.W / 2, y: this.H * 0.35, text: `LEVEL ${this.level}!`, start: this.time, color: "#f97316", big: true });
   }
@@ -801,9 +863,9 @@ export class GameEngine {
 
   private burst(x: number, y: number, n: number, colors: string[], speed: number) {
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = speed * (0.35 + Math.random() * 0.65);
-      this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.35 + Math.random() * 0.35, size: 2 + Math.random() * 2.5, color: colors[i % colors.length], gravity: 0 });
+      const a = this.rng() * Math.PI * 2;
+      const sp = speed * (0.35 + this.rng() * 0.65);
+      this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.35 + this.rng() * 0.35, size: 2 + this.rng() * 2.5, color: colors[i % colors.length], gravity: 0 });
     }
     if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
   }

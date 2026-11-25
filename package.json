@@ -10,6 +10,7 @@
     "optimize-assets": "node script/optimize-assets.mjs",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
+    "sim": "tsx script/sim.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
