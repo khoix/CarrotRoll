@@ -298,26 +298,20 @@ export class Renderer {
 
     const speedFlicker = p.speedBoostTimer > 0 && p.speedBoostTimer < 1.5;
     const isSpeed = p.speedBoostTimer > 0 && (!speedFlicker || Math.floor(time / 80) % 2 === 0);
-    const baseAlpha = ctx.globalAlpha;
-    let bodyAlpha = baseAlpha;
-    if (isSpeed && speedFlicker) bodyAlpha *= 0.5 + Math.sin(time / 70) * 0.5;
+    // Alpha handling as in the original: the speed-expiry flicker replaces the hit blink, and the
+    // attract-expiry fade applies to the shadow and body only (not the sparkle overlays).
+    let overlayAlpha = ctx.globalAlpha;
+    if (isSpeed && speedFlicker) overlayAlpha = 0.5 + Math.sin(time / 70) * 0.5;
+    ctx.globalAlpha = isAttract && p.attractTimer < ATTRACT_FADE_THRESHOLD ? p.attractTimer / ATTRACT_FADE_THRESHOLD : overlayAlpha;
 
     blit(ctx, S.shadow, cx, cy);
-
-    ctx.globalAlpha = bodyAlpha;
     if (isSpeed) {
       drawRabbit(ctx, cx, cy, pw, ph, "speed", time);
     } else {
-      const variant = isMax ? "gold" : isAttract ? "attract" : "normal";
-      const spr = S.rabbits[variant];
-      // Attract expiry: fade the red version back into the normal one.
-      if (variant === "attract" && p.attractTimer < ATTRACT_FADE_THRESHOLD && S.rabbits.normal) {
-        blit(ctx, S.rabbits.normal, cx, cy);
-        ctx.globalAlpha = bodyAlpha * (p.attractTimer / ATTRACT_FADE_THRESHOLD);
-      }
+      const spr = S.rabbits[isMax ? "gold" : isAttract ? "attract" : "normal"];
       if (spr) blit(ctx, spr, cx, cy);
     }
-    ctx.globalAlpha = bodyAlpha;
+    ctx.globalAlpha = overlayAlpha;
 
     if (isSpeed) {
       ctx.save();

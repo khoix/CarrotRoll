@@ -297,10 +297,17 @@ export class GameEngine {
     this.emitHud();
   }
 
-  /** Effects keep animating (particles, popups) even in menus/game-over. */
+  /**
+   * Outside of play (game over, menu) only effects run. The clock still advances so time-based
+   * effects (score popups, explosions) finish fading and are removed instead of freezing on screen.
+   */
   advanceEffects(frameMs: number) {
-    const dt = Math.min(MAX_FRAME_S, frameMs / 1000);
+    const dt = Math.min(MAX_FRAME_S, Math.max(0, frameMs / 1000));
+    this.time += dt * 1000;
     this.updateEffects(dt);
+    let j = 0;
+    for (const e of this.explosions) if (this.time - e.start < e.dur) this.explosions[j++] = e;
+    this.explosions.length = j;
   }
 
   // ---------------------------------------------------------------------------
@@ -772,7 +779,7 @@ export class GameEngine {
       const sp = 300 + Math.random() * 450;
       this.particles.push({ x: this.W / 2 + (Math.random() - 0.5) * 80, y: this.H * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 1.2 + Math.random() * 0.6, size: 3 + Math.random() * 3, color: colors[i % colors.length], gravity: 700 });
     }
-    this.popups.push({ x: this.W / 2, y: this.H * 0.35, text: `LEVEL ${this.level}!`, start: this.time, color: "#f97316", big: true });
+    this.pushPopup({ x: this.W / 2, y: this.H * 0.35, text: `LEVEL ${this.level}!`, start: this.time, color: "#f97316", big: true });
   }
 
   private gameOver() {
@@ -783,8 +790,13 @@ export class GameEngine {
 
   private addScore(n: number, x: number, y: number, big = false) {
     this.score += n;
-    this.popups.push({ x, y, text: `+${n}`, start: this.time, color: big ? "#facc15" : "#ffffff", big });
-    if (this.popups.length > 24) this.popups.shift();
+    this.pushPopup({ x, y, text: `+${n}`, start: this.time, color: big ? "#facc15" : "#ffffff", big });
+  }
+
+  /** At most 24 popups on screen; the oldest is dropped first. */
+  private pushPopup(p: Popup) {
+    this.popups.push(p);
+    if (this.popups.length > 24) this.popups.splice(0, this.popups.length - 24);
   }
 
   private burst(x: number, y: number, n: number, colors: string[], speed: number) {

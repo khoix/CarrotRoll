@@ -315,41 +315,81 @@ export function drawPowerup(ctx: CanvasRenderingContext2D, type: PowerupType, w:
 
 export type RabbitVariant = "normal" | "gold" | "attract" | "speed";
 
+/** Player base colour (state.player.color in the original game). */
+const PLAYER_COLOR = "#3B82F6";
+
 /**
- * Front-facing rabbit (body, ears, inner ears, cheek tufts, tail) centred on (cx, cy).
+ * The bunny avatar, ported exactly from the build the game was hosted with (seen from behind:
+ * side tufts behind a round body, two ears, tail). Centred on (cx, cy); pw/ph = player box size.
  * "speed" uses time-based rainbow hues, so it is the only variant drawn live each frame.
  */
 export function drawRabbit(ctx: CanvasRenderingContext2D, cx: number, cy: number, pw: number, ph: number, variant: RabbitVariant, time = 0) {
-  const top = cy - ph / 2;
-  // Body
-  const bodyGrad = ctx.createRadialGradient(cx - pw * 0.2, cy - ph * 0.25, 0, cx, cy, pw * 0.5);
+  const px = cx - pw / 2;
+  const py = cy - ph / 2;
+
+  // Side tufts (drawn first, so the body sits in front of them)
+  const tuft = ctx.createLinearGradient(px - 5, cy, px + pw + 5, cy);
   if (variant === "speed") {
-    const hue = (time / 25) % 360;
-    bodyGrad.addColorStop(0, `hsl(${hue}, 80%, 82%)`);
-    bodyGrad.addColorStop(0.4, `hsl(${(hue + 90) % 360}, 75%, 72%)`);
-    bodyGrad.addColorStop(0.85, `hsl(${(hue + 180) % 360}, 70%, 58%)`);
-    bodyGrad.addColorStop(1, `hsl(${(hue + 240) % 360}, 70%, 50%)`);
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+    const h = (time / 18) % 360;
+    tuft.addColorStop(0, `hsl(${h}, 85%, 75%)`);
+    tuft.addColorStop(0.5, `hsl(${(h + 60) % 360}, 90%, 85%)`);
+    tuft.addColorStop(1, `hsl(${(h + 120) % 360}, 85%, 75%)`);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
   } else if (variant === "gold") {
-    bodyGrad.addColorStop(0, "#fff8dc");
-    bodyGrad.addColorStop(0.4, "#ffd700");
-    bodyGrad.addColorStop(0.85, "#daa520");
-    bodyGrad.addColorStop(1, "#b8860b");
+    tuft.addColorStop(0, "rgba(255, 248, 220, 0.98)");
+    tuft.addColorStop(0.5, "rgba(255, 223, 128, 0.95)");
+    tuft.addColorStop(1, "rgba(255, 193, 7, 0.9)");
     ctx.strokeStyle = "rgba(255, 235, 59, 0.9)";
   } else if (variant === "attract") {
-    bodyGrad.addColorStop(0, "#F87171");
-    bodyGrad.addColorStop(0.4, "#DC2626");
-    bodyGrad.addColorStop(0.85, "#B91C1C");
-    bodyGrad.addColorStop(1, "#991B1B");
+    tuft.addColorStop(0, "#F87171");
+    tuft.addColorStop(0.5, "#DC2626");
+    tuft.addColorStop(1, "#B91C1C");
     ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
   } else {
-    bodyGrad.addColorStop(0, "#8bb8e8");
-    bodyGrad.addColorStop(0.35, "#6b9bd1");
-    bodyGrad.addColorStop(0.75, "#4a7ab8");
-    bodyGrad.addColorStop(1, "#3d6ba3");
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+    tuft.addColorStop(0, "rgba(255, 250, 240, 0.95)");
+    tuft.addColorStop(0.5, "rgba(230, 240, 255, 0.9)");
+    tuft.addColorStop(1, "rgba(255, 250, 240, 0.95)");
+    ctx.strokeStyle = "rgba(100, 120, 180, 0.8)";
   }
-  ctx.fillStyle = bodyGrad;
+  ctx.fillStyle = tuft;
+  ctx.lineWidth = 1.5;
+  for (const d of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(cx + d * 4, cy);
+    ctx.bezierCurveTo(cx + d * 22, cy - 12, cx + d * 26, cy, cx + d * 22, cy + 14);
+    ctx.bezierCurveTo(cx + d * 14, cy + 8, cx + d * 8, cy + 4, cx + d * 4, cy);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Body
+  const body = ctx.createLinearGradient(px, py, px + pw, py + ph);
+  if (variant === "speed") {
+    const h = (time / 25) % 360;
+    body.addColorStop(0, `hsl(${h}, 80%, 70%)`);
+    body.addColorStop(0.3, `hsl(${(h + 90) % 360}, 85%, 80%)`);
+    body.addColorStop(0.6, `hsl(${(h + 180) % 360}, 80%, 75%)`);
+    body.addColorStop(1, `hsl(${(h + 240) % 360}, 80%, 65%)`);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+  } else if (variant === "gold") {
+    body.addColorStop(0, "#fff8dc");
+    body.addColorStop(0.35, "#ffd700");
+    body.addColorStop(0.7, "#daa520");
+    body.addColorStop(1, "#b8860b");
+    ctx.strokeStyle = "rgba(255, 235, 59, 0.9)";
+  } else if (variant === "attract") {
+    body.addColorStop(0, "#F87171");
+    body.addColorStop(0.35, "#DC2626");
+    body.addColorStop(0.7, "#B91C1C");
+    body.addColorStop(1, "#991B1B");
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  } else {
+    body.addColorStop(0, "#60a5fa");
+    body.addColorStop(0.35, PLAYER_COLOR);
+    body.addColorStop(1, "#1d4ed8");
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+  }
+  ctx.fillStyle = body;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.ellipse(cx, cy, pw * 0.42, ph * 0.38, 0, 0, Math.PI * 2);
@@ -357,87 +397,34 @@ export function drawRabbit(ctx: CanvasRenderingContext2D, cx: number, cy: number
   ctx.stroke();
 
   // Ears
-  const earOuterW = 6;
-  const earOuterH = 14;
-  const earInnerW = 3.5;
-  const earInnerH = 10;
-  const earY = top + 2;
-  const earGrad = ctx.createLinearGradient(cx, earY - 2, cx, earY + earOuterH);
+  const ear = ctx.createLinearGradient(cx, py - 2, cx, py + 14);
   if (variant === "speed") {
-    const hue = (time / 22 + 30) % 360;
-    earGrad.addColorStop(0, `hsl(${hue}, 85%, 78%)`);
-    earGrad.addColorStop(0.5, `hsl(${(hue + 70) % 360}, 80%, 68%)`);
-    earGrad.addColorStop(1, `hsl(${(hue + 140) % 360}, 75%, 55%)`);
+    const h = (time / 22 + 30) % 360;
+    ear.addColorStop(0, `hsl(${h}, 85%, 80%)`);
+    ear.addColorStop(0.5, `hsl(${(h + 70) % 360}, 90%, 75%)`);
+    ear.addColorStop(1, `hsl(${(h + 140) % 360}, 85%, 65%)`);
     ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
   } else if (variant === "gold") {
-    earGrad.addColorStop(0, "#fffacd");
-    earGrad.addColorStop(0.5, "#ffd700");
-    earGrad.addColorStop(1, "#b8860b");
+    ear.addColorStop(0, "#fffacd");
+    ear.addColorStop(0.5, "#ffd700");
+    ear.addColorStop(1, "#b8860b");
     ctx.strokeStyle = "rgba(255, 235, 59, 0.8)";
   } else if (variant === "attract") {
-    earGrad.addColorStop(0, "#FCA5A5");
-    earGrad.addColorStop(0.5, "#DC2626");
-    earGrad.addColorStop(1, "#991B1B");
+    ear.addColorStop(0, "#FCA5A5");
+    ear.addColorStop(0.5, "#DC2626");
+    ear.addColorStop(1, "#991B1B");
     ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
   } else {
-    earGrad.addColorStop(0, "#8bb8e8");
-    earGrad.addColorStop(0.5, "#6b9bd1");
-    earGrad.addColorStop(1, "#3d6ba3");
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+    ear.addColorStop(0, "#93c5fd");
+    ear.addColorStop(0.5, PLAYER_COLOR);
+    ear.addColorStop(1, "#1d4ed8");
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
   }
-  ctx.fillStyle = earGrad;
+  ctx.fillStyle = ear;
   ctx.lineWidth = 1.5;
-  for (const sx of [-9, 9]) {
+  for (const d of [-8, 8]) {
     ctx.beginPath();
-    ctx.ellipse(cx + sx, earY + 5, earOuterW, earOuterH, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  // Ear inners
-  if (variant === "speed") {
-    ctx.fillStyle = `hsla(${(time / 20) % 360}, 60%, 95%, 0.95)`;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-  } else if (variant === "gold") {
-    ctx.fillStyle = "#fffef0";
-    ctx.strokeStyle = "rgba(255, 235, 59, 0.7)";
-  } else if (variant === "attract") {
-    ctx.fillStyle = "#FFE4E4";
-    ctx.strokeStyle = "rgba(220, 38, 38, 0.5)";
-  } else {
-    const innerEarGrad = ctx.createRadialGradient(cx - 10, earY, 0, cx - 9, earY + 4, earInnerW * 2);
-    innerEarGrad.addColorStop(0, "#f8fcff");
-    innerEarGrad.addColorStop(0.6, "#f0f4f8");
-    innerEarGrad.addColorStop(1, "#e8ecf0");
-    ctx.fillStyle = innerEarGrad;
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-  }
-  ctx.lineWidth = 1;
-  for (const sx of [-9, 9]) {
-    ctx.beginPath();
-    ctx.ellipse(cx + sx, earY + 5, earInnerW, earInnerH, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  // Cheek tufts
-  if (variant === "speed") {
-    ctx.fillStyle = `hsla(${(time / 20) % 360}, 70%, 94%, 0.95)`;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-  } else if (variant === "gold") {
-    ctx.fillStyle = "#fffacd";
-    ctx.strokeStyle = "rgba(255, 235, 59, 0.7)";
-  } else if (variant === "attract") {
-    ctx.fillStyle = "#FCA5A5";
-    ctx.strokeStyle = "rgba(220, 38, 38, 0.5)";
-  } else {
-    ctx.fillStyle = "#f8fafc";
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-  }
-  ctx.lineWidth = 1;
-  for (const sx of [-12, 12]) {
-    ctx.beginPath();
-    ctx.ellipse(cx + sx, cy + 2, 8, 9, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + d, py + 4, 5, 12, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
@@ -458,7 +445,7 @@ export function drawRabbit(ctx: CanvasRenderingContext2D, cx: number, cy: number
   }
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(cx, cy + ph * 0.32, 7, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy + ph * 0.32, 7, 8, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 }
@@ -529,8 +516,8 @@ export class SpriteCache {
     const types: PowerupType[] = ["powerup_invincible", "powerup_speed", "powerup_blaster", "powerup_heart", "powerup_attract"];
     for (const t of types) this.powerups[t] = makeSprite(34, 34, scale, 17, 17, (c) => { c.translate(17, 17); drawPowerup(c, t, 30, 30); });
     for (const v of ["normal", "gold", "attract"] as const) {
-      // 40×40 rabbit; ears reach ~7 above its box, so pad the sprite.
-      this.rabbits[v] = makeSprite(56, 64, scale, 28, 36, (c) => drawRabbit(c, 28, 36, 40, 40, v));
+      // 40×40 rabbit; tufts reach ±27 and ears ~9 above its box, so pad the sprite.
+      this.rabbits[v] = makeSprite(64, 68, scale, 32, 38, (c) => drawRabbit(c, 32, 38, 40, 40, v));
     }
     // Drop shadow (shadowBlur baked once instead of every frame). Same look as the old live version.
     this.shadow = makeSprite(64, 64, scale, 32, 32, (c) => {
