@@ -3,7 +3,11 @@ import fs from "fs";
 import path from "path";
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "public");
+  // When bundled as dist/server/app.cjs, __dirname is dist/server; when dist/index.cjs, __dirname is dist
+  const distPath =
+    typeof __dirname !== "undefined" && __dirname.endsWith(path.sep + "server")
+      ? path.resolve(__dirname, "..", "public")
+      : path.resolve(__dirname, "public");
   if (!fs.existsSync(distPath)) {
     throw new Error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`,

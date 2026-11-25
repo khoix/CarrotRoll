@@ -1,0 +1,340 @@
+/* Mobile-only styles (viewport < 768px). Breakpoint matches use-mobile.tsx. */
+@media (max-width: 767px) {
+  /* Title screen: larger carrot icon in logo (container size unchanged) */
+  .title-screen-logo-icon {
+    font-size: 3rem;
+  }
+
+  /* Main menu (StartMenuCard): larger carrot icon (container unchanged) */
+  .menu-card-carrot-icon {
+    font-size: 3rem;
+  }
+
+  /* Main menu (StartMenuCard): hazards icons same size as carrot (40×40) */
+  .menu-card-hazards-icons {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  .menu-card-hazards-icons svg {
+    flex-shrink: 0;
+  }
+
+  /* Main menu: larger carrot in header and Start Game button (container unchanged) */
+  .menu-carrot-icon {
+    font-size: 1.75rem;
+  }
+
+  /* Title screen: progress bar track height on mobile */
+  .title-screen-progress .title-screen-progress-track {
+    height: 0.75rem;
+  }
+
+  /* Lock vertical scroll on play page (iOS Chrome: overflow alone often insufficient) */
+  body:has(.play-page) {
+    overflow: hidden !important;
+    position: fixed !important;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+  }
+  /* Whole play screen: no text selection/highlight (canvas, HUD, touchpad, gaps) */
+  .play-page {
+    position: fixed !important;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden !important;
+    -webkit-overflow-scrolling: auto;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .play-page .play-content {
+    overflow-y: hidden !important;
+    overflow-x: hidden;
+    touch-action: manipulation; /* no pinch-zoom or double-tap zoom */
+  }
+
+  /* Hide fullscreen button on mobile */
+  .mobile-hide-fullscreen {
+    display: none !important;
+  }
+
+  /* Canvas container: consistent width and min-height; no zoom/highlight; no text selection in-game */
+  .game-canvas-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Game over window scaled down on mobile */
+  .gameover-card {
+    transform: scale(0.8);
+  }
+
+  /* Full-width canvas expansion on mobile when game is active */
+  .game-canvas-fullwidth {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* HUD: smaller size and reserve right space so hamburger sits in-line (no overlap). Font scales via --hud-font-size to avoid truncation. */
+  .game-hud {
+    padding-left: 0.75rem;
+    padding-right: 3.25rem; /* space for .game-menu-button (icon + margin) */
+    overflow: hidden; /* Prevent container overflow */
+  }
+  .game-hud > div {
+    gap: 0.5rem;
+    flex-shrink: 0; /* Pills keep natural width; font scaling controls fit */
+  }
+  .game-hud > div > div {
+    padding: 0.25rem 0.5rem;
+    border-width: 1px;
+    border-radius: 0.5rem;
+    font-size: var(--hud-font-size, 0.875rem);
+    white-space: nowrap;
+    flex-shrink: 0; /* No truncation; scaling ensures content fits */
+  }
+
+  /* Hamburger: align with HUD row (same top) */
+  .game-menu-button {
+    top: 1rem;
+    right: 1rem;
+  }
+  .game-menu-button button {
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+  .game-menu-button svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  /* Touch controls: 2rem gap from canvas only; disable zoom and tap highlight */
+  .touch-controls-container {
+    width: 100%;
+    max-width: 100%;
+    margin-top: 2rem;
+    touch-action: none; /* game handles all touches: no browser zoom/scroll */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .touch-controls-container .touchpad-surface,
+  .touch-controls-container .fire-btn-mobile,
+  .touch-controls-container button {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  /* Touchpad surface and area height: decreased by 1/6 (175/216 × 5/6) */
+  .touchpad-surface {
+    background: #f3f4f6;
+    border: 2px solid #d1d5db;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+    height: calc(16rem * 875 / 1296) !important;
+  }
+
+  .touch-controls-inner {
+    margin-top: 0;
+    padding-top: calc(1rem * 875 / 1296);
+    padding-bottom: calc(1rem * 875 / 1296);
+  }
+
+  /* Fire buttons: 1rem padding outside left and right buttons */
+  .touch-controls-row {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  /* Subtle directional triangles */
+  .triangle-up,
+  .triangle-down,
+  .triangle-left,
+  .triangle-right {
+    width: 0;
+    height: 0;
+    opacity: 0.25;
+    pointer-events: none;
+  }
+
+  .triangle-up {
+    border-left: 12px solid transparent;
+    border-right: 12px solid transparent;
+    border-bottom: 16px solid #6b7280;
+  }
+
+  .triangle-down {
+    border-left: 12px solid transparent;
+    border-right: 12px solid transparent;
+    border-top: 16px solid #6b7280;
+  }
+
+  .triangle-left {
+    border-top: 12px solid transparent;
+    border-bottom: 12px solid transparent;
+    border-right: 16px solid #6b7280;
+  }
+
+  .triangle-right {
+    border-top: 12px solid transparent;
+    border-bottom: 12px solid transparent;
+    border-left: 16px solid #6b7280;
+  }
+
+  /* Sound controls mobile touch-friendly */
+  /* Target Radix UI dropdown menu content */
+  [data-radix-dropdown-menu-content],
+  [data-radix-popper-content-wrapper] {
+    touch-action: manipulation;
+  }
+
+  /* Ensure sliders in dropdown menu are touch-friendly */
+  /* Override touch-none class from slider component - target by class and data attribute */
+  [data-radix-dropdown-menu-content] [data-radix-slider-root],
+  [data-radix-dropdown-menu-content] .touch-none {
+    touch-action: pan-x !important;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  /* Slider thumb should be touch-friendly */
+  [data-radix-dropdown-menu-content] [data-radix-slider-thumb] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    cursor: grab;
+  }
+
+  [data-radix-dropdown-menu-content] [data-radix-slider-thumb]:active {
+    cursor: grabbing;
+  }
+
+  /* Ensure switches in dropdown menu are touch-friendly */
+  [data-radix-dropdown-menu-content] [data-radix-switch-root] {
+    touch-action: manipulation !important;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    cursor: pointer;
+  }
+
+  /* Switch thumb should be touch-friendly */
+  [data-radix-dropdown-menu-content] [data-radix-switch-thumb] {
+    touch-action: manipulation;
+    pointer-events: none;
+  }
+
+  /* Prevent text selection on labels and make them touch-friendly */
+  [data-radix-dropdown-menu-content] label {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+
+  /* Ensure dropdown menu items are touch-friendly */
+  [data-radix-dropdown-menu-item] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Make the entire sound controls section touch-friendly */
+  [data-radix-dropdown-menu-content] > div {
+    touch-action: manipulation;
+  }
+
+  /* Collapsible dropdown animations */
+  [data-radix-collapsible-content] {
+    animation-duration: 0.2s;
+    animation-timing-function: ease-out;
+  }
+
+  [data-state="open"][data-radix-collapsible-content] {
+    animation-name: slideDown;
+  }
+
+  [data-state="closed"][data-radix-collapsible-content] {
+    animation-name: slideUp;
+  }
+
+  @keyframes slideDown {
+    from {
+      height: 0;
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 1;
+    }
+    to {
+      height: 0;
+      opacity: 0;
+    }
+  }
+
+  /* Admin page: safe areas and touch-friendly scrolling */
+  .admin-page.safe-area-pad {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .admin-login .min-w-0 {
+    margin-left: env(safe-area-inset-left);
+    margin-right: env(safe-area-inset-right);
+  }
+
+  .admin-table-scroll {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+
+  .safe-area-dialog {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  /* Ending sequence overlay: GPU hints and will-change for glitch/slideshow performance */
+  .glitch-container,
+  .glitch-container > * {
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  /* Endgame slideshow: fill visible viewport so images are properly sized on mobile */
+  .endgame-slideshow-mobile {
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 100%;
+    min-height: 100dvh;
+  }
+  .endgame-slideshow .endgame-slide-img {
+    min-width: 100%;
+    min-height: 100%;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+}

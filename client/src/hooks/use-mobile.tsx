@@ -2,18 +2,18 @@ import * as React from "react"
 
 const MOBILE_BREAKPOINT = 768
 
+/** Set on first effect run; all callers then see this value for the session. */
+let lockedIsMobile: boolean | null = null
+
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
 
   React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    }
-    mql.addEventListener("change", onChange)
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    return () => mql.removeEventListener("change", onChange)
+    if (lockedIsMobile !== null) return
+    const value = window.innerWidth < MOBILE_BREAKPOINT
+    setIsMobile(value)
+    lockedIsMobile = value
   }, [])
 
-  return !!isMobile
+  return lockedIsMobile !== null ? lockedIsMobile : !!isMobile
 }

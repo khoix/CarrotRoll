@@ -1,11 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type InsertHighScore } from "@shared/routes";
 
+const apiBase = (import.meta.env.BASE_URL || "").replace(/\/$/, "");
+
 export function useScores() {
   return useQuery({
     queryKey: [api.scores.list.path],
     queryFn: async () => {
-      const res = await fetch(api.scores.list.path);
+      const url = apiBase + api.scores.list.path;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch scores");
       return api.scores.list.responses[200].parse(await res.json());
     },
@@ -17,7 +20,8 @@ export function useCreateScore() {
   return useMutation({
     mutationFn: async (data: InsertHighScore) => {
       const validated = api.scores.create.input.parse(data);
-      const res = await fetch(api.scores.create.path, {
+      const url = apiBase + api.scores.create.path;
+      const res = await fetch(url, {
         method: api.scores.create.method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(validated),

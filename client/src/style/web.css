@@ -1,0 +1,7 @@
+/* Desktop-only styles (viewport ≥ 768px). Breakpoint matches use-mobile.tsx. */
+@media (min-width: 768px) {
+  /* Title screen: progress bar right under title (position in Home.tsx) */
+  .title-screen-progress .title-screen-progress-track {
+    height: 0.75rem;
+  }
+}

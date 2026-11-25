@@ -1,8 +1,35 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, QueryCache, MutationCache } from "@tanstack/react-query";
+
+export const MAINTENANCE_MESSAGE = "ENOENT_MAINTENANCE";
+
+function isMaintenanceError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if ((err as { isMaintenance?: boolean }).isMaintenance === true) return true;
+  if (err.message === MAINTENANCE_MESSAGE) return true;
+  if (err.message.includes("ENOENT")) return true;
+  return false;
+}
+
+let maintenanceSetter: ((value: boolean) => void) | null = null;
+export function registerMaintenanceSetter(setter: ((value: boolean) => void) | null) {
+  maintenanceSetter = setter;
+}
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
+    if (res.status === 503) {
+      try {
+        const body = JSON.parse(text) as { code?: string };
+        if (body?.code === "ENOENT") {
+          const e = new Error(MAINTENANCE_MESSAGE);
+          (e as Error & { isMaintenance: boolean }).isMaintenance = true;
+          throw e;
+        }
+      } catch (e) {
+        if (isMaintenanceError(e)) throw e;
+      }
+    }
     throw new Error(`${res.status}: ${text}`);
   }
 }
@@ -42,6 +69,16 @@ export const getQueryFn: <T>(options: {
   };
 
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => {
+      if (isMaintenanceError(error)) maintenanceSetter?.(true);
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      if (isMaintenanceError(error)) maintenanceSetter?.(true);
+    },
+  }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

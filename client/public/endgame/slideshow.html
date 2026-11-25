@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Endgame Slideshow</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; }
+
+    .stage {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .layer {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      will-change: opacity;
+    }
+
+    .img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scale(1);
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    .black {
+      position: absolute;
+      inset: 0;
+      background: #000;
+      opacity: 1;
+      pointer-events: none;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="layer" id="layerA"><img class="img" id="imgA" alt=""></div>
+    <div class="layer" id="layerB"><img class="img" id="imgB" alt=""></div>
+    <div class="black" id="black"></div>
+  </div>
+
+<script>
+(() => {
+  const TOTAL_MS = 240000;
+  const LAST_MS = 30000;
+
+  const SLIDE05_MULT = 0.5;
+  const SLIDE17_MULT = 0.5;
+
+  const FADE_MS = 1000;
+  const FADE_BLACK_MS = 1250;
+
+  const START_SCALE = 1.22;
+  const END_SCALE = 1.00;
+
+  const NO_ZOOM_SLIDES = new Set([4, 16]);
+
+  const DEFAULT_FOCALS = [
+    { x: 0.44, y: 0.42 }, { x: 0.52, y: 0.55 }, { x: 0.62, y: 0.42 }, { x: 0.66, y: 0.55 },
+    { x: 0.62, y: 0.44 }, { x: 0.78, y: 0.45 }, { x: 0.64, y: 0.58 }, { x: 0.55, y: 0.48 },
+    { x: 0.55, y: 0.60 }, { x: 0.60, y: 0.56 }, { x: 0.50, y: 0.52 }, { x: 0.55, y: 0.52 },
+    { x: 0.55, y: 0.52 }, { x: 0.52, y: 0.62 }, { x: 0.52, y: 0.62 }, { x: 0.58, y: 0.55 },
+    { x: 0.56, y: 0.55 }, { x: 0.50, y: 0.45 },
+  ];
+
+  const layerA = document.getElementById('layerA');
+  const layerB = document.getElementById('layerB');
+  const imgA = document.getElementById('imgA');
+  const imgB = document.getElementById('imgB');
+  const black = document.getElementById('black');
+
+  let slides = [];
+  let running = false;
+  let t0 = 0;
+  let pausedAt = 0;
+  let rafId = 0;
+
+  let fade = { active: false, fromIdx: 0, toIdx: 0, startMs: 0 };
+
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+  function buildTimeline() {
+    slides = [];
+
+    const BASE_POOL_MS = TOTAL_MS - LAST_MS;
+    const BASE_MS = BASE_POOL_MS / 17;
+
+    const SHORT = new Map([
+      [4, SLIDE05_MULT],
+      [16, SLIDE17_MULT],
+    ]);
+
+    const REDIST_TARGETS = new Set([
+      0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+    ]);
+
+    let freed = 0;
+    for (const [idx, mult] of SHORT.entries()) {
+      freed += BASE_MS * (1 - mult);
+    }
+    const extraEach = freed / REDIST_TARGETS.size;
+
+    let cursor = 0;
+    for (let i = 0; i < 18; i++) {
+      const isLast = (i === 17);
+      let dur;
+      if (isLast) {
+        dur = LAST_MS;
+      } else if (SHORT.has(i)) {
+        dur = BASE_MS * SHORT.get(i);
+      } else {
+        dur = BASE_MS + extraEach;
+      }
+
+      const startMs = cursor;
+      const endMs = cursor + dur;
+      cursor = endMs;
+
+      slides.push({
+        i,
+        name: `Slide ${String(i + 1).padStart(2, '0')}`,
+        url: `./${String(i + 1).padStart(2, '0')}.png`,
+        focal: DEFAULT_FOCALS[i] || { x: 0.5, y: 0.5 },
+        durMs: dur,
+        startMs,
+        endMs,
+      });
+    }
+
+    const drift = cursor - TOTAL_MS;
+    if (Math.abs(drift) > 0.01) {
+      slides[17].endMs = TOTAL_MS;
+      slides[17].durMs = TOTAL_MS - slides[17].startMs;
+    }
+  }
+  buildTimeline();
+
+  function nearestSlideIndex(t) {
+    for (let i = 0; i < slides.length; i++) {
+      if (t >= slides[i].startMs && t < slides[i].endMs) return i;
+    }
+    return slides.length - 1;
+  }
+
+  function slideProgress(slide, t) {
+    return clamp((t - slide.startMs) / slide.durMs, 0, 1);
+  }
+
+  function effectiveFocalForSlide(idx) {
+    return slides[idx].focal;
+  }
+
+  function applyZoom(imgEl, idx, t, freezeAtT) {
+    if (NO_ZOOM_SLIDES.has(idx)) {
+      imgEl.style.transformOrigin = '50% 50%';
+      imgEl.style.transform = 'scale(1)';
+      return;
+    }
+
+    const slide = slides[idx];
+    const focal = effectiveFocalForSlide(idx);
+    const tt = (freezeAtT == null) ? t : freezeAtT;
+    const p = slideProgress(slide, tt);
+    const s = START_SCALE + (END_SCALE - START_SCALE) * p;
+    imgEl.style.transformOrigin = `${(focal.x * 100).toFixed(2)}% ${(focal.y * 100).toFixed(2)}%`;
+    imgEl.style.transform = `scale(${s.toFixed(5)})`;
+  }
+
+  function setLayer(layerKey, slideIdx) {
+    const imgEl = (layerKey === 'A') ? imgA : imgB;
+    imgEl.src = slides[slideIdx].url;
+    imgEl.dataset.slideIndex = String(slideIdx);
+  }
+
+  function setOpacity(layerKey, v) {
+    const layer = (layerKey === 'A') ? layerA : layerB;
+    layer.style.opacity = String(v);
+  }
+
+  function hardShow(idx, t) {
+    fade.active = false;
+    setLayer('A', idx);
+    setOpacity('A', 1);
+    setOpacity('B', 0);
+    const tt = (t == null) ? slides[idx].startMs : t;
+    applyZoom(imgA, idx, tt, null);
+  }
+
+  function updateBlack(t) {
+    if (t < FADE_BLACK_MS) {
+      black.style.opacity = String(1 - (t / FADE_BLACK_MS));
+    } else if (t < TOTAL_MS - FADE_BLACK_MS) {
+      black.style.opacity = '0';
+    } else {
+      const dt = t - (TOTAL_MS - FADE_BLACK_MS);
+      black.style.opacity = String(clamp(dt / FADE_BLACK_MS, 0, 1));
+    }
+  }
+
+  function updateCrossfadeState(t) {
+    const curIdx = nearestSlideIndex(t);
+
+    if (curIdx > 0) {
+      const cur = slides[curIdx];
+      const local = t - cur.startMs;
+      const shouldFade = local < FADE_MS;
+
+      if (shouldFade) {
+        const prevIdx = curIdx - 1;
+        if (!(fade.active && fade.fromIdx === prevIdx && fade.toIdx === curIdx)) {
+          fade = { active: true, fromIdx: prevIdx, toIdx: curIdx, startMs: cur.startMs };
+          setLayer('A', prevIdx);
+          setLayer('B', curIdx);
+        }
+        return;
+      }
+    }
+
+    if (fade.active) {
+      fade.active = false;
+      hardShow(curIdx, t);
+    } else {
+      const shown = Number(imgA.dataset.slideIndex || -1);
+      if (shown !== curIdx) hardShow(curIdx);
+    }
+  }
+
+  function updateLayers(t) {
+    updateCrossfadeState(t);
+
+    if (fade.active) {
+      const p = clamp((t - fade.startMs) / FADE_MS, 0, 1);
+      setOpacity('A', 1 - p);
+      setOpacity('B', p);
+
+      const freezeOldT = slides[fade.fromIdx].endMs;
+      const freezeNewT = slides[fade.toIdx].startMs;
+      applyZoom(imgA, fade.fromIdx, t, freezeOldT);
+      applyZoom(imgB, fade.toIdx, t, freezeNewT);
+      return;
+    }
+
+    const idx = nearestSlideIndex(t);
+    applyZoom(imgA, idx, t, null);
+  }
+
+  function updateFrame(t) {
+    t = clamp(t, 0, TOTAL_MS);
+    updateLayers(t);
+    updateBlack(t);
+  }
+
+  function timelineNow() {
+    if (!running) return pausedAt;
+    return clamp(performance.now() - t0, 0, TOTAL_MS);
+  }
+
+  function loop() {
+    const t = timelineNow();
+    updateFrame(t);
+    if (running && t < TOTAL_MS) {
+      rafId = requestAnimationFrame(loop);
+    } else {
+      running = false;
+      pausedAt = TOTAL_MS;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    running = true;
+    t0 = performance.now();
+    pausedAt = 0;
+    hardShow(0, 0);
+    black.style.opacity = '1';
+    updateFrame(0);
+    rafId = requestAnimationFrame(loop);
+  });
+})();
+</script>
+</body>
+</html>
