@@ -7,7 +7,7 @@ import TouchControls from "@/components/TouchControls";
 import StartMenuCard from "@/components/StartMenuCard";
 import HighScoreList, { HighScoreListContent } from "@/components/HighScoreList";
 import { useScores } from "@/hooks/use-scores";
-import { useSound, SFX_PRECACHE_COUNT } from "@/contexts/SoundContext";
+import { useSound } from "@/contexts/SoundContext";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -110,34 +110,27 @@ export default function Home() {
     }
   }, [isMobile]);
 
+  // Title-screen progress tracks only the small SFX/loop decodes. Music streams (AAC), and iOS
+  // won't preload media elements without a gesture, so gating on music could stall forever.
   useEffect(() => {
-    const musicTotal = PRECACHE_URLS.length;
-    const sfxTotal = SFX_PRECACHE_COUNT;
-    const total = musicTotal + sfxTotal;
-    let musicLoaded = 0;
-    let sfxLoaded = 0;
-
-    const updateProgress = () => {
-      const done = musicLoaded + sfxLoaded;
-      setCacheProgress(Math.min(100, total ? Math.round((100 * done) / total) : 0));
-      if (done >= total) setCacheDone(true);
+    let cancelled = false;
+    preloadSfx((loaded, total) => {
+      if (cancelled) return;
+      setCacheProgress(Math.min(100, total ? Math.round((100 * loaded) / total) : 100));
+      if (loaded >= total) setCacheDone(true);
+    }).then(() => {
+      if (!cancelled) {
+        setCacheProgress(100);
+        setCacheDone(true);
+      }
+    });
+    // Warm the HTTP cache for the menu track (best effort; no progress dependency).
+    const warm = new Audio();
+    warm.preload = "auto";
+    warm.src = SOUNDS_BASE + PRECACHE_URLS[0];
+    return () => {
+      cancelled = true;
     };
-
-    PRECACHE_URLS.forEach((file) => {
-      const audio = new Audio(SOUNDS_BASE + file);
-      const onReady = () => {
-        musicLoaded += 1;
-        updateProgress();
-      };
-      audio.addEventListener("canplaythrough", onReady, { once: true });
-      audio.addEventListener("error", onReady, { once: true });
-      audio.load();
-    });
-
-    preloadSfx((loaded) => {
-      sfxLoaded = loaded;
-      updateProgress();
-    });
   }, [preloadSfx]);
 
   const handleTitleClick = useCallback(() => {

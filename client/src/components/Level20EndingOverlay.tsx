@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSound } from "@/contexts/SoundContext";
 
 type Phase = "glitch" | "black" | "scroll" | "endgame" | "fadeout";
 
@@ -15,8 +16,6 @@ const SLICE_COUNT_MOBILE = 2;
 
 interface Level20EndingOverlayProps {
   captureDataUrl?: string | null;
-  /** When provided (e.g. from Level20Demo), use this audio for glitch static instead of creating one; avoids autoplay block after async capture. */
-  preexistingStaticAudioRef?: React.RefObject<HTMLAudioElement | null>;
   /** When true, use mobile optimizations (e.g. for admin mobile preview). */
   forceMobile?: boolean;
   onComplete: () => void;
@@ -119,9 +118,8 @@ const SCROLL_DURATION_MS = 50000;
 const ENDGAME_REVEAL_START_MS = 20000; // 30s before scroll ends: start music and fade in slideshow
 const ENDGAME_FADE_DURATION_MS = 15000;
 
-const SOUNDS_BASE = (import.meta.env.BASE_URL || "/").replace(/\/?$/, "") + "/sounds/";
-const STATIC_ENDGAME_SRC = `${SOUNDS_BASE}static_endgame.m4a`.replace(/\/+/g, "/");
-const ENDGAME_MUSIC_SRC = `${SOUNDS_BASE}music_endgame01.m4a`.replace(/\/+/g, "/");
+/** Played on the shared (already-unlocked) music element so it starts on mobile without a new tap. */
+const ENDGAME_MUSIC_FILE = "music_endgame01.m4a";
 
 // Slideshow constants
 const SLIDESHOW_TOTAL_MS = 240000;
@@ -446,13 +444,12 @@ function useImagePreloader(slideUrls: string[], phase: Phase, scrollElapsedMs: n
   }, [phase, slideUrls]);
 }
 
-export default function Level20EndingOverlay({ captureDataUrl, preexistingStaticAudioRef, forceMobile, onComplete }: Level20EndingOverlayProps) {
+export default function Level20EndingOverlay({ captureDataUrl, forceMobile, onComplete }: Level20EndingOverlayProps) {
   const isMobile = useIsMobile() || forceMobile === true;
   const [phase, setPhase] = useState<Phase>("glitch");
   const [scrollElapsedMs, setScrollElapsedMs] = useState(0);
   const glitch = useGlitchRandom(phase === "glitch", isMobile);
-  const ownedStaticAudioRef = useRef<HTMLAudioElement | null>(null);
-  const rampRafRef = useRef<number>(0);
+  const { playAmbient, stopAmbient, setAmbientVolume, playCustomMusic, stopMusic } = useSound();
   const scrollStartRef = useRef<number>(0);
   const slideshowActive = (phase === "scroll" && scrollElapsedMs >= ENDGAME_REVEAL_START_MS) || phase === "endgame";
   const slideUrls = useMemo(() => buildSlideshowTimeline(isMobile).map((s) => s.url), [isMobile]);
@@ -460,19 +457,6 @@ export default function Level20EndingOverlay({ captureDataUrl, preexistingStatic
   const slideshow = useSlideshow(slideshowActive, isMobile);
   const [showThanks, setShowThanks] = useState(false);
   const thanksTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Preload static audio when overlay mounts so it's cached when glitch starts
-  useEffect(() => {
-    const a = new Audio(STATIC_ENDGAME_SRC);
-    a.load();
-  }, []);
-
-  // Preload endgame music early in scroll so it's ready when we start at ENDGAME_REVEAL_START_MS (20s)
-  useEffect(() => {
-    if (phase !== "scroll" || scrollElapsedMs < 5000) return;
-    const a = new Audio(ENDGAME_MUSIC_SRC);
-    a.load();
-  }, [phase, scrollElapsedMs]);
 
   // When slideshow completes, show thanks screen for 5s, then fade to title
   useEffect(() => {
@@ -495,49 +479,14 @@ export default function Level20EndingOverlay({ captureDataUrl, preexistingStatic
     return () => clearTimeout(glitchTimer);
   }, []);
 
-  // Static.wav during glitch: use preexisting audio (from Demo) or create one; ramp volume, stop when screen goes black
+  // Endgame static during glitch: a gapless decoded loop on the ambient bus, ramped up over the glitch.
   useEffect(() => {
     if (phase !== "glitch") return;
-
-    const audio = preexistingStaticAudioRef?.current ?? (() => {
-      const a = new Audio(STATIC_ENDGAME_SRC);
-      a.loop = true;
-      a.volume = STATIC_VOLUME_START;
-      ownedStaticAudioRef.current = a;
-      a.play().catch(() => {});
-      return a;
-    })();
-    const startVol = Math.max(0, Math.min(1, preexistingStaticAudioRef?.current ? audio.volume : STATIC_VOLUME_START));
-
-    const start = performance.now();
-    const setVolume = (v: number) => {
-      const clamped = Math.max(0, Math.min(1, v));
-      try {
-        audio.volume = clamped;
-      } catch {
-        // Some environments throw if volume was ever set out of range; avoid repeated failures
-      }
-    };
-    const tick = (now: number) => {
-      const elapsed = now - start;
-      if (elapsed >= GLITCH_DURATION_MS) {
-        setVolume(STATIC_VOLUME_END);
-        return;
-      }
-      const t = Math.max(0, Math.min(1, elapsed / GLITCH_DURATION_MS));
-      const vol = startVol + t * (STATIC_VOLUME_END - startVol);
-      setVolume(vol);
-      rampRafRef.current = requestAnimationFrame(tick);
-    };
-    rampRafRef.current = requestAnimationFrame(tick);
-
-    return () => {
-      cancelAnimationFrame(rampRafRef.current);
-      audio.pause();
-      audio.currentTime = 0;
-      if (ownedStaticAudioRef.current === audio) ownedStaticAudioRef.current = null;
-    };
-  }, [phase, preexistingStaticAudioRef]);
+    setAmbientVolume("static_endgame", STATIC_VOLUME_START, 0.01);
+    playAmbient("static_endgame");
+    setAmbientVolume("static_endgame", STATIC_VOLUME_END, GLITCH_DURATION_MS / 1000);
+    return () => stopAmbient("static_endgame");
+  }, [phase, playAmbient, stopAmbient, setAmbientVolume]);
 
   useEffect(() => {
     if (phase === "black") {
@@ -557,9 +506,15 @@ export default function Level20EndingOverlay({ captureDataUrl, preexistingStatic
     }
     scrollStartRef.current = performance.now();
     let raf = 0;
-    const tick = () => {
-      const elapsed = Math.min(SCROLL_DURATION_MS, performance.now() - scrollStartRef.current);
-      setScrollElapsedMs(elapsed);
+    let lastSet = -Infinity;
+    const tick = (now: number) => {
+      const elapsed = Math.min(SCROLL_DURATION_MS, now - scrollStartRef.current);
+      // ~15 Hz is plenty for the thresholds and the 15 s slideshow fade; re-rendering this whole
+      // overlay every frame for 50 s was a major cost on phones.
+      if (now - lastSet >= 66 || elapsed >= SCROLL_DURATION_MS) {
+        lastSet = now;
+        setScrollElapsedMs(elapsed);
+      }
       if (elapsed < SCROLL_DURATION_MS) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -580,37 +535,25 @@ export default function Level20EndingOverlay({ captureDataUrl, preexistingStatic
     }
   }, [phase]);
 
-  // Start endgame music when scrollElapsedMs >= ENDGAME_REVEAL_START_MS; listener fires when music ends → fadeout
-  const endgameMusicRef = useRef<HTMLAudioElement | null>(null);
+  // Start endgame music at ENDGAME_REVEAL_START_MS; when it ends, fade out.
+  const endgameMusicStartedRef = useRef(false);
   useEffect(() => {
     const shouldStart =
       (phase === "scroll" && scrollElapsedMs >= ENDGAME_REVEAL_START_MS) || phase === "endgame";
-    if (!shouldStart) return;
-    if (endgameMusicRef.current) return; // already started at ENDGAME_REVEAL_START_MS
-    const audio = new Audio(ENDGAME_MUSIC_SRC);
-    endgameMusicRef.current = audio;
-    audio.play().catch(() => setPhase("fadeout"));
-    const onEnded = () => {
-      endgameMusicRef.current = null;
-      setPhase("fadeout");
-    };
-    audio.addEventListener("ended", onEnded);
-    return () => {
-      audio.removeEventListener("ended", onEnded);
-      // Do not pause here when leaving scroll→endgame; fadeout effect cleans up when phase === "fadeout"
-    };
-  }, [phase, scrollElapsedMs]);
+    if (!shouldStart || endgameMusicStartedRef.current) return;
+    endgameMusicStartedRef.current = true;
+    playCustomMusic(ENDGAME_MUSIC_FILE, { onEnded: () => setPhase("fadeout") });
+  }, [phase, scrollElapsedMs, playCustomMusic]);
 
-  // When in endgame phase only: ensure we don't double-start music. Clean up audio when leaving endgame for fadeout.
   useEffect(() => {
-    if (phase !== "fadeout") return;
-    const audio = endgameMusicRef.current;
-    if (audio) {
-      audio.pause();
-      audio.currentTime = 0;
-      endgameMusicRef.current = null;
-    }
-  }, [phase]);
+    if (phase !== "fadeout" || !endgameMusicStartedRef.current) return;
+    stopMusic();
+  }, [phase, stopMusic]);
+
+  // Unmount (e.g. skipped / navigated away): don't leave the ending track playing.
+  useEffect(() => () => {
+    if (endgameMusicStartedRef.current) stopMusic();
+  }, [stopMusic]);
 
   useEffect(() => {
     if (phase === "fadeout") {
