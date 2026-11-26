@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSound } from "@/contexts/SoundContext";
+import { GhostAtmosphere, GhostPoem } from "@/components/GhostPoem";
 
 type Phase = "glitch" | "black" | "scroll" | "endgame" | "fadeout";
 
@@ -28,10 +29,12 @@ const POEM_LINES = [
   "To the waters and the wild",
   "With a faery, hand in hand,",
   "For the world's more full of weeping",
-  "than you can understand.",
+  "Than you can understand.",
 ];
-/** Single string for mobile so the poem has no line breaks and only word-wraps. */
-const POEM_TEXT_MOBILE = POEM_LINES.join(" ");
+/** Poem size, relative to the scroll box's width: desktop keeps each line on one line, so its longest
+ * line must fit in 90% of the width; mobile wraps, so it can be larger. */
+const POEM_FONT_DESKTOP = "clamp(1.1rem, 3.4cqw, 3.5rem)";
+const POEM_FONT_MOBILE = "clamp(1.35rem, 6.2cqw, 2.6rem)";
 
 // Intensity ramps from 0.15 to 1 over the glitch duration (ease-in so it builds more toward the end)
 function glitchIntensityFactor(elapsedMs: number): number {
@@ -748,11 +751,18 @@ export default function Level20EndingOverlay({ captureDataUrl, forceMobile, onCo
           animate={{ opacity: 1 }}
           transition={{ duration: 0 }}
         >
-          {/* Star Wars style scroll: crisp layer on top + drifting/breathing additive glow behind; centered */}
+          {/* Fog and drifting dust behind the poem */}
+          {phase === "scroll" && <GhostAtmosphere lite={isMobile} />}
+          {/* Star Wars style scroll of the haunted poem (see GhostPoem); it rises out of the dark and dissolves near the top */}
           {phase === "scroll" && (
             <div
               className="absolute inset-0 overflow-hidden flex justify-center"
               style={{
+                maskImage: "linear-gradient(to top, transparent 0%, #000 18%, #000 60%, transparent 92%)",
+                WebkitMaskImage: "linear-gradient(to top, transparent 0%, #000 18%, #000 60%, transparent 92%)",
+                // Size the poem from this box (cqw), not the window: on desktop the ending can sit
+                // in the embedded game area, which is narrower than the window
+                containerType: "inline-size",
                 perspective: "1000px",
                 perspectiveOrigin: "50% 50%",
               }}
@@ -777,84 +787,15 @@ export default function Level20EndingOverlay({ captureDataUrl, forceMobile, onCo
                   ease: "linear",
                 }}
               >
-                <div
-                  className="relative"
-                  style={{
-                    width: "90vw",
-                    textAlign: "center",
-                  }}
-                >
-                  {/* Ghost layer: semi-transparent duplicate behind, additive glow; simplified on mobile for performance */}
-                  <motion.div
-                    className="font-crawl absolute top-0 left-0"
-                    style={{
-                      width: "100%",
-                      fontSize: isMobile ? "clamp(1rem, 4vw, 2rem)" : "clamp(2rem, 5vw, 4rem)",
-                      lineHeight: isMobile ? "1.6" : "1.8",
-                      letterSpacing: isMobile ? "0.08em" : "0.12em",
-                      fontStyle: "italic",
-                      color: "rgba(255, 255, 255, 0.82)",
-                      mixBlendMode: "plus-lighter",
-                      pointerEvents: "none",
-                    }}
-                    animate={
-                      isMobile
-                        ? {
-                            x: 5,
-                            y: 5,
-                            opacity: [0.6, 0.8, 0.6],
-                            filter: ["blur(4px)", "blur(8px)", "blur(4px)"],
-                          }
-                        : {
-                            x: 5,
-                            y: 5,
-                            opacity: [0.55, 0.8, 0.65, 0.85, 0.6, 0.55],
-                            filter: ["blur(4px)", "blur(10px)", "blur(6px)", "blur(12px)", "blur(5px)", "blur(4px)"],
-                            scaleX: [1, 1.02, 0.98, 1.015, 0.99, 1.01, 1],
-                            scaleY: [1, 0.99, 1.02, 0.985, 1.01, 0.995, 1],
-                            rotate: [0, 0.8, -0.5, 0.4, -0.6, 0.3, 0],
-                            skewX: [0, 1, -0.8, 0.5, -1.2, 0.3, 0],
-                            skewY: [0, -0.5, 0.6, -0.3, 0.4, -0.2, 0],
-                          }
-                    }
-                    transition={{
-                      duration: 12,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                  >
-                    {isMobile ? (
-                      <div style={{ textAlign: "center", whiteSpace: "normal" }}>{POEM_TEXT_MOBILE}</div>
-                    ) : (
-                      POEM_LINES.map((line, i) => (
-                        <div key={i} style={{ textAlign: "center", whiteSpace: "nowrap" }}>
-                          {line}
-                        </div>
-                      ))
-                    )}
-                  </motion.div>
-                  {/* Crisp text layer on top */}
-                  <div
-                    className="font-crawl relative"
-                    style={{
-                      width: "100%",
-                      fontSize: isMobile ? "clamp(1rem, 4vw, 2rem)" : "clamp(2rem, 5vw, 4rem)",
-                      lineHeight: isMobile ? "1.6" : "1.8",
-                      letterSpacing: isMobile ? "0.08em" : "0.12em",
-                      color: "rgba(248, 248, 255, 0.98)",
-                      textShadow: "0 2px 4px rgba(0,0,0,0.5)",
-                    }}
-                  >
-                    {isMobile ? (
-                      <div style={{ textAlign: "center", whiteSpace: "normal" }}>{POEM_TEXT_MOBILE}</div>
-                    ) : (
-                      POEM_LINES.map((line, i) => (
-                        <div key={i} style={{ textAlign: "center", whiteSpace: "nowrap" }}>
-                          {line}
-                        </div>
-                      ))
-                    )}
-                  </div>
+                <div style={{ width: "90cqw" }}>
+                  <GhostPoem
+                    lines={POEM_LINES}
+                    paragraph={isMobile}
+                    lite={isMobile}
+                    fontSize={isMobile ? POEM_FONT_MOBILE : POEM_FONT_DESKTOP}
+                    lineHeight={isMobile ? "1.6" : "1.8"}
+                    letterSpacing={isMobile ? "0.08em" : "0.12em"}
+                  />
                 </div>
               </motion.div>
             </div>
