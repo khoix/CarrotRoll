@@ -10,7 +10,7 @@
  * that can't be dodged shows up even when the full fight mixes it with others. Lives are set
  * high so every fight lasts the full 30 s; the usual stun and invulnerability after a hit apply.
  */
-import { GameEngine } from "../client/src/game/engine";
+import { GameEngine, KEY_SPEED_MULT } from "../client/src/game/engine";
 import { bossForLevel, isBossLevel, BOSS_SURVIVE_S, type BossPattern } from "../client/src/game/tiers";
 import { mulberry32 } from "../client/src/game/rng";
 import { BOTS, WORLDS, planKeys, steerWithKeys, think, type BotConfig } from "./bot";
@@ -38,6 +38,7 @@ function fight(bot: BotConfig, seed: number, world: { w: number; h: number }, le
   const e = new GameEngine({ sfx: noop, ambient: noop, goldenBunny: noop, hud: noop, phase: noop });
   e.setWorldSize(world.w, world.h);
   e.autoFire = true;
+  e.controls = input === "keys" ? "keys" : "touch";
   e.start(level, seed);
   const botRng = mulberry32(seed ^ 0x9e3779b9);
   let nextThink = 0;
@@ -59,7 +60,7 @@ function fight(bot: BotConfig, seed: number, world: { w: number; h: number }, le
     if (e.time >= nextThink) {
       if (bot === PLANNER) target = planKeys(e, 200, history);
       else {
-        think(e, bot, botRng);
+        think(e, bot, botRng, input === "keys" ? KEY_SPEED_MULT : 2.5);
         target = e.dragTarget;
       }
       nextThink = e.time + bot.reactMs;

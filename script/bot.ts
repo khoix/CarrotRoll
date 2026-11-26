@@ -2,7 +2,7 @@
  * The simulator's bots, shared by script/sim.ts and script/boss-test.ts. They steer exactly like
  * a finger drag (engine.dragTarget), so they play by the same rules as a touch player.
  */
-import { GameEngine, type Threat } from "../client/src/game/engine";
+import { GameEngine, KEY_SPEED_MULT, type Threat } from "../client/src/game/engine";
 
 export type BotConfig = {
   name: string;
@@ -44,11 +44,12 @@ function pickupValue(type: string, e: GameEngine): number {
   return 0;
 }
 
-export function think(e: GameEngine, bot: BotConfig, rng: () => number) {
+/** `speedMult`: how fast the bot can actually move, as a multiple of the bunny's speed (drag 2.5, keys 1). */
+export function think(e: GameEngine, bot: BotConfig, rng: () => number, speedMult = 2.5) {
   const p = e.player;
   const pcx = p.x + p.width / 2;
   const pcy = p.y + p.height / 2;
-  const speed = p.speed * 2.5;
+  const speed = p.speed * speedMult;
   const threats: Threat[] = [];
   e.forEachThreat((t) => threats.push(t));
   const zones: { x0: number; x1: number; from: number; to: number }[] = [];
@@ -162,8 +163,8 @@ export function planKeys(e: GameEngine, reactMs: number, history: { t: number; t
       for (let t = dt; t <= 1.2; t += dt) {
         const d = t < 0.35 ? a : b;
         const k = 1 - Math.pow(0.35, dt * 60);
-        vx += (d[0] * p.speed - vx) * k;
-        vy += (d[1] * p.speed - vy) * k;
+        vx += (d[0] * p.speed * KEY_SPEED_MULT - vx) * k;
+        vy += (d[1] * p.speed * KEY_SPEED_MULT - vy) * k;
         x = Math.max(half, Math.min(e.W - half, x + vx * dt));
         y = Math.max(half, y + vy * dt);
         if (y > floor && t < survive) survive = t; // into the giant carrot

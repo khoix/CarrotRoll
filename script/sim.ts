@@ -7,15 +7,16 @@
  *   npm run sim -- --save script/sim-baseline.json     # record a baseline
  *   npm run sim -- --compare script/sim-baseline.json  # compare against it
  *
- * The bots steer exactly like a finger drag (engine.dragTarget) with blasters on auto-fire,
- * so they play by the same rules as a touch player. They are a yardstick, not a human: compare
+ * The bots steer like a finger drag (engine.dragTarget) on mobile, and with the arrow keys on
+ * desktop (--input drag|keys overrides), with blasters on auto-fire, so they play by the same
+ * rules as a player on that device. They are a yardstick, not a human: compare
  * runs of the same bots before and after a change rather than reading absolute numbers.
  */
 import fs from "fs";
-import { GameEngine } from "../client/src/game/engine";
+import { GameEngine, KEY_SPEED_MULT } from "../client/src/game/engine";
 import { FINAL_LEVEL, LEVELS_PER_TIER } from "../client/src/game/content";
 import { mulberry32 } from "../client/src/game/rng";
-import { BOTS, WORLDS, think, type BotConfig } from "./bot";
+import { BOTS, WORLDS, steerWithKeys, think, type BotConfig } from "./bot";
 
 const FRAME_MS = 1000 / 60;
 const MAX_GAME_S = 60 * 60;
@@ -23,20 +24,27 @@ const MAX_GAME_S = 60 * 60;
 type BossResult = { level: number; outcome: "defeated" | "survived" | "died"; seconds: number };
 type RunResult = { seed: number; level: number; ending: boolean; seconds: number; deathCause: string | null; levelTimes: number[]; bosses: BossResult[] };
 
-function runOne(bot: BotConfig, seed: number, world: { w: number; h: number }): RunResult {
+/** Desktop players steer with the keyboard (mouse drag is off); touch players drag. */
+type Input = "drag" | "keys";
+
+function runOne(bot: BotConfig, seed: number, world: { w: number; h: number }, input: Input): RunResult {
   const noop = () => {};
   const e = new GameEngine({ sfx: noop, ambient: noop, goldenBunny: noop, hud: noop, phase: noop });
   e.setWorldSize(world.w, world.h);
   e.autoFire = true;
+  e.controls = input === "keys" ? "keys" : "touch";
   const botRng = mulberry32(seed ^ 0x9e3779b9);
   e.start(1, seed);
   const t0 = e.time;
   let nextThink = 0;
+  let target: { x: number; y: number } | null = null;
   while ((e.phase === "countdown" || e.phase === "playing") && (e.time - t0) / 1000 < MAX_GAME_S) {
     if (e.time >= nextThink) {
-      think(e, bot, botRng);
+      think(e, bot, botRng, input === "keys" ? KEY_SPEED_MULT : 2.5);
+      target = e.dragTarget;
       nextThink = e.time + bot.reactMs;
     }
+    if (input === "keys") steerWithKeys(e, target);
     e.advance(FRAME_MS);
   }
   return {
@@ -133,16 +141,17 @@ function main() {
   const runs = Number(arg("runs", "100"));
   const worldName = (arg("world", "desktop") as keyof typeof WORLDS) ?? "desktop";
   const world = WORLDS[worldName];
+  const input = (arg("input") ?? (worldName === "desktop" ? "keys" : "drag")) as Input;
   const onlyBot = arg("bot");
   const seed0 = Number(arg("seed", "1000"));
   const summaries: Summary[] = [];
   for (const bot of BOTS.filter((b) => !onlyBot || b.name === onlyBot)) {
     const started = Date.now();
     const results: RunResult[] = [];
-    for (let i = 0; i < runs; i++) results.push(runOne(bot, seed0 + i, world));
+    for (let i = 0; i < runs; i++) results.push(runOne(bot, seed0 + i, world, input));
     const s = summarize(bot.name, results);
     summaries.push(s);
-    console.log(`\n${bot.name} bot · ${runs} runs · ${worldName} ${world.w}x${world.h} · ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    console.log(`\n${bot.name} bot · ${runs} runs · ${worldName} ${world.w}x${world.h} (${input === "keys" ? "keyboard" : "drag"}) · ${((Date.now() - started) / 1000).toFixed(1)} s`);
     console.log(`  ending reached: ${s.endingRate}% (final level ${s.finalLevel})`);
     console.log(`  level reached: median ${s.levelMedian}, middle half ${s.levelP25}-${s.levelP75}; median run ${s.medianRunMinutes} min`);
     console.log(`  reached: ${Object.entries(s.reachRate).map(([k, v]) => `${k} ${v}%`).join(" · ")}`);
@@ -151,7 +160,7 @@ function main() {
     if (s.bosses && Object.keys(s.bosses).length)
       console.log(`  bosses: ${Object.entries(s.bosses).map(([k, b]) => `${k} ${b.fights} fights: won ${b.defeated}% / survived ${b.survived}% / lost ${b.died}% (${b.meanSeconds}s)`).join(" · ")}`);
   }
-  const out = { world: worldName, runs, seed0, date: new Date().toISOString().slice(0, 10), summaries };
+  const out = { world: worldName, input, runs, seed0, date: new Date().toISOString().slice(0, 10), summaries };
   const save = arg("save");
   if (save) {
     fs.writeFileSync(save, JSON.stringify(out, null, 2) + "\n");

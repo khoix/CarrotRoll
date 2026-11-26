@@ -1,5 +1,6 @@
 {
   "world": "mobile",
+  "input": "drag",
   "runs": 200,
   "seed0": 1000,
   "date": "2026-11-26",
@@ -8,16 +9,16 @@
       "bot": "casual",
       "runs": 200,
       "finalLevel": 25,
-      "endingRate": 24,
+      "endingRate": 18,
       "levelMedian": 21,
       "levelP25": 18,
-      "levelP75": 25,
+      "levelP75": 24,
       "reachRate": {
-        "L5": 97,
-        "L10": 97,
-        "L15": 92,
-        "L20": 61,
-        "L25": 26
+        "L5": 99,
+        "L10": 99,
+        "L15": 93,
+        "L20": 63,
+        "L25": 20
       },
       "secondsPerLevel": {
         "L1-5": 19,
@@ -27,48 +28,49 @@
         "L21-25": 18
       },
       "deaths": {
-        "spike": 34,
+        "spike": 40,
+        "cauliflower": 11,
+        "sprout_small": 3,
+        "burr": 8,
+        "ball": 6,
+        "lightning": 8,
+        "sprout": 4,
+        "beet": 2,
         "icicle": 1,
-        "cauliflower": 14,
-        "sprout": 5,
-        "ball": 9,
-        "burr": 6,
-        "sprout_small": 5,
-        "lightning": 4,
-        "beet": 1
+        "burr_small": 1
       },
-      "medianRunMinutes": 6.5,
+      "medianRunMinutes": 6.8,
       "bosses": {
         "L5": {
-          "fights": 194,
-          "defeated": 87,
-          "survived": 13,
+          "fights": 198,
+          "defeated": 88,
+          "survived": 12,
           "died": 0,
-          "meanSeconds": 17
+          "meanSeconds": 16
         },
         "L10": {
-          "fights": 193,
-          "defeated": 65,
-          "survived": 35,
-          "died": 0,
+          "fights": 198,
+          "defeated": 66,
+          "survived": 33,
+          "died": 1,
           "meanSeconds": 22
         },
         "L20": {
-          "fights": 110,
-          "defeated": 13,
-          "survived": 73,
-          "died": 15,
-          "meanSeconds": 27
+          "fights": 119,
+          "defeated": 22,
+          "survived": 61,
+          "died": 17,
+          "meanSeconds": 26
         },
         "L15": {
-          "fights": 140,
-          "defeated": 40,
-          "survived": 56,
-          "died": 4,
+          "fights": 144,
+          "defeated": 47,
+          "survived": 48,
+          "died": 6,
           "meanSeconds": 26
         },
         "L25": {
-          "fights": 47,
+          "fights": 34,
           "defeated": 6,
           "survived": 85,
           "died": 9,
@@ -80,70 +82,71 @@
       "bot": "expert",
       "runs": 200,
       "finalLevel": 25,
-      "endingRate": 65.5,
+      "endingRate": 56,
       "levelMedian": 25,
-      "levelP25": 24,
+      "levelP25": 22,
       "levelP75": 25,
       "reachRate": {
         "L5": 100,
         "L10": 100,
-        "L15": 98,
-        "L20": 90,
-        "L25": 70
+        "L15": 100,
+        "L20": 89,
+        "L25": 63
       },
       "secondsPerLevel": {
         "L1-5": 17,
         "L6-10": 17,
-        "L11-15": 18,
+        "L11-15": 19,
         "L16-20": 18,
         "L21-25": 18
       },
       "deaths": {
-        "spike": 16,
-        "ball": 4,
-        "sprout": 4,
-        "lightning": 3,
-        "burr": 3,
-        "cauliflower": 4,
-        "icicle": 1,
-        "sprout_small": 1
+        "lightning": 5,
+        "cauliflower": 7,
+        "spike": 19,
+        "ball": 5,
+        "burr": 1,
+        "sprout": 5,
+        "beet": 1,
+        "sprout_small": 3,
+        "icicle": 1
       },
-      "medianRunMinutes": 7,
+      "medianRunMinutes": 7.4,
       "bosses": {
         "L5": {
           "fights": 200,
           "defeated": 89,
           "survived": 11,
           "died": 0,
-          "meanSeconds": 16
+          "meanSeconds": 15
         },
         "L10": {
           "fights": 200,
-          "defeated": 73,
-          "survived": 28,
-          "died": 0,
-          "meanSeconds": 21
+          "defeated": 78,
+          "survived": 22,
+          "died": 1,
+          "meanSeconds": 19
         },
         "L15": {
-          "fights": 116,
-          "defeated": 43,
-          "survived": 55,
-          "died": 2,
-          "meanSeconds": 26
+          "fights": 139,
+          "defeated": 47,
+          "survived": 53,
+          "died": 1,
+          "meanSeconds": 25
         },
         "L20": {
-          "fights": 165,
-          "defeated": 18,
-          "survived": 80,
-          "died": 2,
-          "meanSeconds": 29
+          "fights": 155,
+          "defeated": 30,
+          "survived": 64,
+          "died": 6,
+          "meanSeconds": 27
         },
         "L25": {
-          "fights": 123,
-          "defeated": 11,
-          "survived": 82,
-          "died": 7,
-          "meanSeconds": 28
+          "fights": 112,
+          "defeated": 5,
+          "survived": 83,
+          "died": 12,
+          "meanSeconds": 27
         }
       }
     }

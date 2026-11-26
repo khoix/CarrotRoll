@@ -24,11 +24,12 @@ import { useIsMobile, useCoarsePointer } from "@/hooks/use-mobile";
 import StartMenuCard from "@/components/StartMenuCard";
 import { validateName } from "@shared/schema";
 import { dailySeed, utcDay } from "@shared/daily";
-import { BASE_H, BASE_W, GameEngine, type HudState, type Phase, type SpawnableType } from "@/game/engine";
+import { BASE_H, BASE_W, GameEngine, type HudState, type Intermission, type Phase, type SpawnableType } from "@/game/engine";
 import { TIERS, type TierTheme } from "@/game/tiers";
 import { Renderer, type Quality } from "@/game/render";
 import { attachDragControls } from "@/game/input";
 import { GameBanner, useBannerQueue } from "@/components/GameBanners";
+import BossTally from "@/components/BossTally";
 
 const SEEN_KEY = "carrotroll_seen_items";
 function loadSeen(): string[] {
@@ -180,6 +181,8 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     const [playerName, setPlayerName] = useState("");
     /** The daily challenge day (YYYY-MM-DD) of the current run, or null for a normal run. */
     const [challengeDay, setChallengeDay] = useState<string | null>(null);
+    /** The between-tiers tally after a boss (null when not showing). */
+    const [intermission, setIntermission] = useState<Intermission | null>(null);
     const [nameError, setNameError] = useState("");
     const nameErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -224,6 +227,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           }
         },
         hud: (h) => setHud(h),
+        intermission: (i) => setIntermission(i),
         phase: (p: Phase) => {
           if (p === "countdown") setGameState("countdown");
           else if (p === "playing") setGameState("playing");
@@ -247,7 +251,10 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
 
     useEffect(() => {
       onStateChangeRef.current?.(gameState);
-      if (gameState !== "playing" && gameState !== "countdown") bannersRef.current.clear();
+      if (gameState !== "playing" && gameState !== "countdown") {
+        bannersRef.current.clear();
+        setIntermission(null);
+      }
     }, [gameState]);
 
     // --- Pause ---
@@ -287,6 +294,8 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
         playSfx("start");
         setMusicState("playing");
         setGateOpen(false);
+        // Hazard tuning follows the controls; start from the device's usual ones
+        engine.controls = coarseRef.current ? "touch" : "keys";
         if (asDaily) {
           const day = utcDay();
           setChallengeDay(day);
@@ -852,7 +861,8 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           )}
           {children}
         </div>
-        {isActive && !paused && <GameBanner banner={banners.current} />}
+        {isActive && <BossTally info={intermission} onCounted={() => playSfx("combo_up")} />}
+        {isActive && !paused && !intermission && <GameBanner banner={banners.current} />}
         {!fillViewport && fullscreenSupported && (
           <Button
             {...({

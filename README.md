@@ -82,7 +82,9 @@ started just before midnight still counts; challenge scores stay off the normal 
 | Touch: drag anywhere | Move (the bunny follows your finger; blasters fire automatically) |
 | Touch: menu → Classic touchpad | Optional on-screen touchpad + fire buttons |
 
-Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls and each tier's new hazards. Every fifth level is a boss: no carrots, so drain its health (blasters fire down at it, reflected broccoli hurts it) or survive 30 seconds. Beat the Carrot King on level 25 to see the ending.
+Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls and each tier's new hazards. Every fifth level is a boss: no carrots, so drain its health (blasters fire down at it, reflected broccoli hurts it) or survive 30 seconds. After each boss the giant carrot retreats while your bonus is tallied, then the next tier begins. Beat the Carrot King on level 25 to see the ending.
+
+Desktop plays with the keyboard and touch screens with a finger drag. A drag steers faster and more precisely, so hazard rates and speeds are tuned per control scheme (`CONTROL_TUNING` in `engine.ts`) to make both land in about the same place; the classic touchpad counts as keyboard.
 
 ## Scripts
 
@@ -102,7 +104,7 @@ Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls an
 ## Project layout
 
 - `client/src/game/` – the game itself: `engine.ts` (fixed-timestep, seeded simulation), `content.ts` (items, unlock levels, spawn weights), `tiers.ts` (themes, hazard rates, bosses), `render.ts` (canvas drawing), `art.ts` (sprites, cached at screen resolution), `input.ts` (drag controls)
-- `script/sim.ts` – balance simulator; `script/sim-baseline*.json` (the original 20-level game) and `script/sim-results*.json` (current tuning)
+- `script/sim.ts` – balance simulator (keyboard bots on desktop, drag bots on mobile); `script/bot.ts` – its bots, shared with `script/boss-test.ts`; `script/sim-baseline*.json` (the original 20-level game, drag bots) and `script/sim-results*.json` (current tuning)
 - `client/src/components/GameCanvas.tsx` – React host: sizing, input wiring, HUD and overlays
 - `client/src/contexts/SoundContext.tsx` – audio engine
 - `assets-src/` – full-quality master audio/images (not deployed); see its README
