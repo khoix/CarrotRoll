@@ -13,23 +13,23 @@ const SPAWNABLE_ENTRIES: { type: SpawnableType; label: string }[] = [
   { type: "spike", label: "Broccoli" },
   { type: "ball", label: "Spiky ball" },
   { type: "carrot", label: "Carrot" },
+  { type: "carrot_golden", label: "Golden carrot" },
+  { type: "carrot_rotten", label: "Rotten carrot" },
   { type: "powerup_heart", label: "Heart" },
   { type: "powerup_invincible", label: "Shield" },
   { type: "powerup_speed", label: "Speed" },
   { type: "powerup_blaster", label: "Blaster" },
   { type: "powerup_attract", label: "Attract" },
+  { type: "powerup_decoy", label: "Decoy Doe" },
+  { type: "powerup_reflector", label: "Reflector" },
+  { type: "powerup_bomb", label: "Bunny Bomb" },
+  { type: "powerup_slowmo", label: "Slow-Mo" },
+  { type: "powerup_rain", label: "Carrot Rain" },
+  { type: "powerup_shrink", label: "Shrink" },
+  { type: "powerup_double", label: "Double" },
 ];
 
-const defaultSpawnCounts: Record<SpawnableType, number> = {
-  spike: 1,
-  ball: 1,
-  carrot: 1,
-  powerup_heart: 1,
-  powerup_invincible: 1,
-  powerup_speed: 1,
-  powerup_blaster: 1,
-  powerup_attract: 1,
-};
+const defaultSpawnCounts = Object.fromEntries(SPAWNABLE_ENTRIES.map((e) => [e.type, 1])) as Partial<Record<SpawnableType, number>>;
 
 interface AdminDemoProps {
   onBackToAdmin: () => void;
@@ -41,7 +41,7 @@ export default function AdminDemo({ onBackToAdmin }: AdminDemoProps) {
   const { unlockAudio, setMusicState, preloadSfx } = useSound();
   const [damageOn, setDamageOn] = useState(false);
   const [demoLevel, setDemoLevel] = useState(1);
-  const [spawnCounts, setSpawnCounts] = useState<Record<SpawnableType, number>>(() => ({ ...defaultSpawnCounts }));
+  const [spawnCounts, setSpawnCounts] = useState<Partial<Record<SpawnableType, number>>>(() => ({ ...defaultSpawnCounts }));
 
   const enableSound = useCallback(() => {
     if (!soundUnlockedRef.current) {
@@ -156,7 +156,7 @@ export default function AdminDemo({ onBackToAdmin }: AdminDemoProps) {
                     type="number"
                     min={1}
                     max={99}
-                    value={spawnCounts[type]}
+                    value={spawnCounts[type] ?? 1}
                     onChange={(e) => setSpawnCount(type, e.target.valueAsNumber)}
                     onFocus={enableSound}
                     className="h-8 w-14 text-center text-sm rounded border-2 border-gray-300 px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"

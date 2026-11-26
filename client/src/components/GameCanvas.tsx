@@ -24,8 +24,27 @@ import { useIsMobile, useCoarsePointer } from "@/hooks/use-mobile";
 import StartMenuCard from "@/components/StartMenuCard";
 import { validateName } from "@shared/schema";
 import { BASE_H, BASE_W, GameEngine, type HudState, type Phase, type SpawnableType } from "@/game/engine";
+import { TIERS, type TierTheme } from "@/game/tiers";
 import { Renderer, type Quality } from "@/game/render";
 import { attachDragControls } from "@/game/input";
+import { GameBanner, useBannerQueue } from "@/components/GameBanners";
+
+const SEEN_KEY = "carrotroll_seen_items";
+function loadSeen(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(SEEN_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function saveSeen(ids: Iterable<string>) {
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(ids)));
+  } catch {
+    // storage unavailable
+  }
+}
 
 export type { SpawnableType } from "@/game/engine";
 
@@ -149,7 +168,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     const [gameState, setGameState] = useState<GameState>("menu");
     const gameStateRef = useRef<GameState>("menu");
     gameStateRef.current = gameState;
-    const [hud, setHud] = useState<HudState>({ score: 0, level: initialLevel, carrots: 0, lives: 3 });
+    const [hud, setHud] = useState<HudState>({ score: 0, level: initialLevel, carrots: 0, lives: 3, combo: 1, comboChain: 0, boss: false });
     const [paused, setPausedState] = useState(false);
     const pausedRef = useRef(false);
     const [gateOpen, setGateOpen] = useState(autoStart && startGate);
@@ -176,8 +195,16 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     const soundRef = useRef(sound);
     soundRef.current = sound;
 
+    const banners = useBannerQueue();
+    const applyTierRef = useRef<(index: number, crossfade: boolean) => void>(() => {});
+    const bannersRef = useRef(banners);
+    bannersRef.current = banners;
+
     if (!engineRef.current) {
       engineRef.current = new GameEngine({
+        announce: (a) => bannersRef.current.push(a),
+        tier: (i) => applyTierRef.current(i, true),
+        discovered: () => saveSeen(engineRef.current!.seenItems),
         sfx: (id) => soundRef.current.playSfx(id),
         ambient: (id, on) => (on ? soundRef.current.playAmbient(id) : soundRef.current.stopAmbient(id)),
         goldenBunny: (on) => {
@@ -206,10 +233,15 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     }
     const engine = engineRef.current;
     engine.damageDisabled = damageDisabled;
+    useState(() => {
+      for (const id of loadSeen()) engine.seenItems.add(id);
+      return null;
+    });
     if (import.meta.env.DEV) (window as unknown as { __game?: GameEngine }).__game = engine;
 
     useEffect(() => {
       onStateChangeRef.current?.(gameState);
+      if (gameState !== "playing" && gameState !== "countdown") bannersRef.current.clear();
     }, [gameState]);
 
     // --- Pause ---
@@ -387,37 +419,65 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
       };
     }, [applyLayout, isFullscreen]);
 
-    // --- Renderer + background assets ---
+    // --- Renderer + background assets (one graded tile per tier, loaded on demand) ---
+    const tierAssetsRef = useRef<{
+      shared: Promise<{ detail: HTMLImageElement | null; mask: HTMLImageElement | null }> | null;
+      scrollers: Map<string, Promise<BackgroundScroller>>;
+      current: number;
+    }>({ shared: null, scrollers: new Map(), current: -1 });
+
+    const scrollerFor = useCallback((theme: TierTheme): Promise<BackgroundScroller> => {
+      const assets = tierAssetsRef.current;
+      const cached = assets.scrollers.get(theme.key);
+      if (cached) return cached;
+      if (!assets.shared) {
+        assets.shared = Promise.all([loadImage("images/detailTile.webp").catch(() => null), loadImage("images/waterMask.png").catch(() => null)]).then(
+          ([detail, mask]) => ({ detail, mask })
+        );
+      }
+      const { W, H } = layoutRef.current;
+      const p = Promise.all([loadImage(theme.tile).catch(() => loadImage("images/baseTile.webp")).catch(() => null), assets.shared]).then(([tile, { detail, mask }]) => {
+        const s = tile
+          ? new BackgroundScroller(W, H, tile, detail ?? undefined, mask ?? undefined, theme.shimmer)
+          : new BackgroundScroller(W, H, createFallbackBaseTile());
+        s.setSpeed(SCROLLER_SPEED);
+        return s;
+      });
+      assets.scrollers.set(theme.key, p);
+      return p;
+    }, []);
+
+    /** Show a tier's look; crossfades from the previous tier's background. Preloads the next tier. */
+    const applyTier = useCallback(
+      (index: number, crossfade: boolean) => {
+        const assets = tierAssetsRef.current;
+        if (assets.current === index) return;
+        assets.current = index;
+        const theme = TIERS[index].theme;
+        scrollerFor(theme).then((sc) => {
+          if (assets.current !== index) return;
+          rendererRef.current?.setTheme(theme, sc, crossfade);
+        });
+        const next = TIERS[index + 1];
+        if (next) scrollerFor(next.theme);
+      },
+      [scrollerFor]
+    );
+    applyTierRef.current = applyTier;
+
     useEffect(() => {
       const { W, H, scale } = layoutRef.current;
       const r = new Renderer(scale, W, H);
       rendererRef.current = r;
-      let cancelled = false;
       const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
       reducedMotionRef.current = !!mq?.matches;
-      loadImage("images/baseTile.webp")
-        .then((base) =>
-          Promise.all([loadImage("images/detailTile.webp").catch(() => null), loadImage("images/waterMask.png").catch(() => null)]).then(
-            ([detail, mask]) => {
-              if (cancelled) return;
-              const s = new BackgroundScroller(W, H, base, detail ?? undefined, mask ?? undefined);
-              s.setSpeed(SCROLLER_SPEED);
-              r.setScroller(s);
-            }
-          )
-        )
-        .catch(() => {
-          if (cancelled) return;
-          const s = new BackgroundScroller(W, H, createFallbackBaseTile());
-          s.setSpeed(SCROLLER_SPEED);
-          r.setScroller(s);
-        });
+      tierAssetsRef.current.current = -1;
+      applyTier(engineRef.current!.tierIndex >= 0 ? engineRef.current!.tierIndex : 0, false);
       return () => {
-        cancelled = true;
         r.sprites.dispose();
         rendererRef.current = null;
       };
-    }, []);
+    }, [applyTier]);
 
     // --- The one animation loop ---
     useEffect(() => {
@@ -455,7 +515,8 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           ctx.translate((Math.random() - 0.5) * 2 * k, (Math.random() - 0.5) * 2 * k);
         }
         const bgDt = st === "gameover" ? 0 : dt / 1000;
-        r.renderBackground(ctx, bgDt, now, q);
+        const w = e.wind;
+        r.renderBackground(ctx, bgDt, now, q, w && e.time >= w.start && active ? w.dir * w.strength : 0);
         if (active || st === "gameover") r.renderGame(ctx, e, q);
         r.haze.renderVignette(ctx);
 
@@ -730,8 +791,13 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           {isActive && (
             <div className="game-hud pointer-events-none absolute left-0 right-0 flex justify-between items-start">
               <div className="flex">
-                <div className="game-hud-pill text-primary">🥕 {hud.carrots}/10</div>
+                <div className="game-hud-pill text-primary">{hud.boss ? "⚔️ BOSS" : `🥕 ${hud.carrots}/10`}</div>
                 <div className="game-hud-pill text-red-500">❤️ {hud.lives === 10 ? "MAX" : hud.lives}</div>
+                {hud.combo > 1 && (
+                  <div key={hud.comboChain} className="game-hud-pill game-hud-combo" aria-label={`Combo times ${hud.combo}`}>
+                    x{hud.combo}
+                  </div>
+                )}
               </div>
               <div className="flex">
                 <div className="game-hud-pill">LEVEL {hud.level}</div>
@@ -758,6 +824,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           )}
           {children}
         </div>
+        {isActive && !paused && <GameBanner banner={banners.current} />}
         {!fillViewport && fullscreenSupported && (
           <Button
             {...({

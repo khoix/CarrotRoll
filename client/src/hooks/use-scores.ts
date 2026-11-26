@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type InsertHighScore } from "@shared/routes";
+import { CURRENT_SEASON } from "@shared/schema";
 
 const apiBase = (import.meta.env.BASE_URL || "").replace(/\/$/, "");
 
@@ -30,6 +31,7 @@ function writeLocal(input: InsertHighScore): Score {
     level: validated.level,
     device: validated.device,
     createdAt: new Date().toISOString(),
+    season: CURRENT_SEASON,
   } as unknown as Score;
   const next = [...list, entry].sort((a, b) => b.score - a.score).slice(0, 100);
   try {

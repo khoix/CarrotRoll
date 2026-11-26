@@ -194,3 +194,83 @@
 .safe-area-pad-top {
   padding-top: max(1rem, env(safe-area-inset-top));
 }
+
+/* Game banners (first appearance of an item, new tier, boss) */
+.game-banner-slot {
+  top: calc(env(safe-area-inset-top, 0px) + 6.4rem);
+}
+.game-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: min(19rem, 80vw);
+  padding: 0.35rem 0.85rem 0.45rem;
+  border: 2px solid #000;
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.22);
+  text-align: center;
+}
+.game-banner-badge {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: #16a34a;
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  margin-bottom: 0.1rem;
+}
+.game-banner-title {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  line-height: 1.05;
+  color: #111827;
+}
+.game-banner-body {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4b5563;
+  line-height: 1.2;
+}
+.game-banner--tier .game-banner-title {
+  font-size: 1.6rem;
+  color: #f97316;
+}
+.game-banner--boss {
+  background: rgba(254, 226, 226, 0.95);
+}
+.game-banner--boss .game-banner-title {
+  color: #dc2626;
+}
+
+/* Combo multiplier pill: pops in on every combo pickup; the bar drains over the 2 s window */
+.game-hud-combo {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background: linear-gradient(135deg, #f97316, #ef4444) !important;
+  animation: combo-pop 0.25s ease-out;
+}
+.game-hud-combo::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.85);
+  transform-origin: left;
+  animation: combo-drain 2s linear forwards;
+}
+@keyframes combo-pop {
+  from { transform: scale(1.35); }
+  to { transform: scale(1); }
+}
+@keyframes combo-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-hud-combo { animation: none; }
+}

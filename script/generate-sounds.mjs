@@ -174,6 +174,92 @@ const sfx = [
   ["ui_click", () => tone(600, 0.05, 0.25)],
 ];
 
+/** Frequency sweep from f0 to f1 (Hz) over the duration, with a quick fade out. */
+function sweep(f0, f1, durationSec, volume = 0.25) {
+  const n = Math.floor(SAMPLE_RATE * durationSec);
+  const samples = [];
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const k = i / n;
+    const f = f0 + (f1 - f0) * k;
+    phase += (2 * Math.PI * f) / SAMPLE_RATE;
+    const g = Math.min(1, i / (SAMPLE_RATE * 0.005)) * (1 - k) ** 1.5;
+    samples.push(32767 * volume * g * Math.sin(phase));
+  }
+  return samples;
+}
+
+/** Quick notes one after another (an arpeggio). */
+function arpeggio(freqs, noteSec, volume = 0.22) {
+  return freqs.flatMap((f) => tone(f, noteSec, volume));
+}
+
+/** Low buzzy wobble (square-ish wave with vibrato). */
+function buzz(freq, durationSec, volume = 0.22) {
+  const n = Math.floor(SAMPLE_RATE * durationSec);
+  const samples = [];
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / SAMPLE_RATE;
+    const f = freq * (1 - 0.35 * (i / n)) + 6 * Math.sin(2 * Math.PI * 9 * t);
+    phase += (2 * Math.PI * f) / SAMPLE_RATE;
+    const g = Math.min(1, i / (SAMPLE_RATE * 0.01)) * (1 - i / n);
+    samples.push(32767 * volume * g * Math.tanh(3 * Math.sin(phase)));
+  }
+  return samples;
+}
+
+// New gameplay sounds (placeholders until real recordings exist)
+sfx.push(
+  ["near_miss", () => sweep(1400, 500, 0.16, 0.2)],
+  ["combo_up", () => arpeggio([660, 880], 0.06, 0.22)],
+  ["golden_carrot", () => arpeggio([784, 988, 1175, 1568], 0.07, 0.24)],
+  ["rotten_carrot", () => buzz(140, 0.3, 0.22)],
+);
+
+/** Filtered noise with an attack/decay envelope; lowpass (0..1, smaller = darker). */
+function noise(durationSec, volume, attackSec, lowpass, seed = 7) {
+  const n = Math.floor(SAMPLE_RATE * durationSec);
+  const samples = [];
+  let x = seed;
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    const white = x / 0x3fffffff - 1;
+    y += lowpass * (white - y);
+    const t = i / SAMPLE_RATE;
+    const g = t < attackSec ? t / attackSec : Math.pow(1 - (t - attackSec) / (durationSec - attackSec), 2);
+    samples.push(32767 * volume * g * y);
+  }
+  return samples;
+}
+
+sfx.push(
+  ["tier_up", () => arpeggio([523, 659, 784, 1047], 0.09, 0.24)],
+  ["sprout_pop", () => sweep(900, 300, 0.08, 0.25)],
+  ["icicle", () => sweep(2600, 1500, 0.18, 0.18)],
+  ["lightning", () => noise(0.6, 0.9, 0.005, 0.5, 11)],
+  ["wind", () => noise(1.6, 0.8, 0.6, 0.05, 3)],
+);
+
+sfx.push(
+  ["powerup_decoy", () => [...noise(0.12, 0.6, 0.002, 0.25, 5), ...tone(220, 0.12, 0.25)]],
+  ["powerup_reflector", () => arpeggio([880, 1320, 1760], 0.06, 0.2)],
+  ["bomb", () => noise(1.1, 1.0, 0.004, 0.12, 19)],
+  ["powerup_slowmo", () => sweep(900, 180, 0.6, 0.25)],
+  ["powerup_rain", () => arpeggio([1047, 1319, 1568, 2093, 1568, 2093], 0.05, 0.2)],
+  ["powerup_shrink", () => sweep(1200, 400, 0.3, 0.22)],
+  ["powerup_double", () => [...tone(660, 0.07, 0.22), ...tone(990, 0.07, 0.22)]],
+  ["reflect", () => sweep(700, 1600, 0.09, 0.2)],
+);
+
+sfx.push(
+  ["boss_warning", () => [...sweep(300, 600, 0.35, 0.28), ...sweep(300, 600, 0.35, 0.28), ...sweep(300, 600, 0.35, 0.28)]],
+  ["boss_hit", () => [...noise(0.08, 0.5, 0.002, 0.3, 23), ...tone(110, 0.08, 0.25)]],
+  ["boss_defeat", () => arpeggio([523, 659, 784, 1047, 784, 1047, 1319], 0.11, 0.26)],
+  ["combo_power", () => arpeggio([784, 1175, 1568], 0.07, 0.24)],
+);
+
 const ambient = [
   // Rapid Rabbit: bright, fast-pulsing whir
   ["rapid_rabbit_loop", () => seamlessLoop(2, [
@@ -190,7 +276,6 @@ const ambient = [
 
 const music = [
   ["music_menu", () => musicLoop(4, 0.12)],
-  ["music_gameover", () => musicLoop(3, 0.1)],
 ];
 
 const force = process.argv.includes("--force");

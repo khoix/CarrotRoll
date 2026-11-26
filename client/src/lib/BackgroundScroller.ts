@@ -53,7 +53,9 @@ export class BackgroundScroller {
     viewHeight: number,
     baseTile: Drawable,
     detailTile?: Drawable,
-    waterMask?: Drawable
+    waterMask?: Drawable,
+    /** Colour of the water shimmer (themes tint it: icy, warm, dim). */
+    shimmerTint = "rgba(240,248,255,0.7)"
   ) {
     this.viewWidth = viewWidth;
     this.viewHeight = viewHeight;
@@ -97,7 +99,7 @@ export class BackgroundScroller {
       const tint = canvas(w, h);
       const tctx = tint.getContext("2d");
       if (tctx) {
-        tctx.fillStyle = "rgba(240,248,255,0.7)";
+        tctx.fillStyle = shimmerTint;
         tctx.fillRect(0, 0, w, h);
         tctx.globalCompositeOperation = "destination-in";
         tctx.drawImage(mask, 0, 0);

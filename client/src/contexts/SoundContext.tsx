@@ -82,7 +82,28 @@ export type SfxId =
   | "death"
   | "carrot_shoot"
   | "blaster_shoot"
-  | "ui_click";
+  | "ui_click"
+  | "near_miss"
+  | "combo_up"
+  | "golden_carrot"
+  | "rotten_carrot"
+  | "tier_up"
+  | "sprout_pop"
+  | "icicle"
+  | "lightning"
+  | "wind"
+  | "powerup_decoy"
+  | "powerup_reflector"
+  | "bomb"
+  | "powerup_slowmo"
+  | "powerup_rain"
+  | "powerup_shrink"
+  | "powerup_double"
+  | "reflect"
+  | "boss_warning"
+  | "boss_hit"
+  | "boss_defeat"
+  | "combo_power";
 
 /** Gapless looping beds. `golden_bunny_loop` is a full music track, handled as a music override. */
 export type AmbientId = "rapid_rabbit_loop" | "attract_loop" | "golden_bunny_loop" | "static_endgame";
@@ -103,6 +124,27 @@ const SFX_FILES: Record<SfxId, string> = {
   carrot_shoot: "carrot_shoot.wav",
   blaster_shoot: "blaster_shoot.wav",
   ui_click: "ui_click.wav",
+  near_miss: "near_miss.wav",
+  combo_up: "combo_up.wav",
+  golden_carrot: "golden_carrot.wav",
+  rotten_carrot: "rotten_carrot.wav",
+  tier_up: "tier_up.wav",
+  sprout_pop: "sprout_pop.wav",
+  icicle: "icicle.wav",
+  lightning: "lightning.wav",
+  wind: "wind.wav",
+  powerup_decoy: "powerup_decoy.wav",
+  powerup_reflector: "powerup_reflector.wav",
+  bomb: "bomb.wav",
+  powerup_slowmo: "powerup_slowmo.wav",
+  powerup_rain: "powerup_rain.wav",
+  powerup_shrink: "powerup_shrink.wav",
+  powerup_double: "powerup_double.wav",
+  reflect: "reflect.wav",
+  boss_warning: "boss_warning.wav",
+  boss_hit: "boss_hit.wav",
+  boss_defeat: "boss_defeat.wav",
+  combo_power: "combo_power.wav",
 };
 
 const AMBIENT_FILES: Record<BufferAmbientId, string> = {
@@ -140,6 +182,12 @@ const SFX_THROTTLE_MS: Partial<Record<SfxId, number>> = {
   ball_explode: 40,
   carrot_collect: 30,
   blaster_shoot: 60,
+  near_miss: 120,
+  combo_up: 150,
+  sprout_pop: 80,
+  icicle: 120,
+  reflect: 80,
+  boss_hit: 110,
 };
 const MAX_VOICES_PER_SFX = 4;
 const MAX_VOICES_TOTAL = 16;

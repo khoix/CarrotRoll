@@ -6,6 +6,8 @@ import Level20EndingOverlay from "@/components/Level20EndingOverlay";
 import TouchControls from "@/components/TouchControls";
 import StartMenuCard from "@/components/StartMenuCard";
 import HighScoreList, { HighScoreListContent } from "@/components/HighScoreList";
+import PowerUpList from "@/components/PowerUpList";
+import { splitLeaderboard, type ScoreRow } from "@/lib/leaderboard";
 import { useScores } from "@/hooks/use-scores";
 import { useSound } from "@/contexts/SoundContext";
 import { Button } from "@/components/ui/button";
@@ -65,28 +67,10 @@ export default function Home() {
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const isMobile = useIsMobile();
   const { data: scores, refetch: refetchScores, isFetching: scoresFetching } = useScores();
-  const { dailyTop20, overallTop20, mobileTop20 } = useMemo(() => {
-    const list = scores ?? [];
-    const sorted = [...list].sort((a, b) => b.score - a.score);
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const daily = list
-      .filter((s) => {
-        const createdAt = (s as { createdAt?: Date | string }).createdAt;
-        if (!createdAt) return false;
-        const d = typeof createdAt === "string" ? new Date(createdAt) : createdAt;
-        return d >= todayStart;
-      })
-      .sort((a, b) => b.score - a.score);
-    const mobile = list
-      .filter((s) => (s as { device?: string }).device === "mobile")
-      .sort((a, b) => b.score - a.score);
-    return {
-      dailyTop20: daily.slice(0, 20),
-      overallTop20: sorted.slice(0, 20),
-      mobileTop20: mobile.slice(0, 20),
-    };
-  }, [scores]);
+  const { daily: dailyTop20, overall: overallTop20, mobile: mobileTop20, classic: classicTop20 } = useMemo(
+    () => splitLeaderboard(scores as ScoreRow[] | undefined),
+    [scores]
+  );
   const [showLeaderboardOverlay, setShowLeaderboardOverlay] = useState(false);
   const gameCanvasRef = useRef<GameCanvasHandle>(null);
   const sidebarContainerRef = useRef<HTMLDivElement>(null);
@@ -569,46 +553,7 @@ export default function Home() {
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-2">
                 <div className="bg-indigo-900 rounded-2xl p-6 text-white border-4 border-indigo-950 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.3)]">
-                  <div className="space-y-4">
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-green-500 border-2 border-green-300 shadow-md flex items-center justify-center text-xl">🛡️</div>
-                        <div>
-                            <p className="font-bold text-sm">Carro-Shield</p>
-                            <p className="text-xs text-indigo-200">Projectile Shield</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-yellow-500 border-2 border-yellow-300 shadow-md flex items-center justify-center text-xl">⚡</div>
-                        <div>
-                            <p className="font-bold text-sm">Rapid Rabbit</p>
-                            <p className="text-xs text-indigo-200">Speed + Invincibility</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-cyan-500 border-2 border-cyan-300 shadow-md flex items-center justify-center relative overflow-hidden">
-                          <span className="absolute top-[15%] bottom-[15%] w-1 bg-white rounded-full" style={{ left: "26%" }} aria-hidden />
-                          <span className="absolute top-[15%] bottom-[15%] w-1 bg-white rounded-full" style={{ right: "26%" }} aria-hidden />
-                        </div>
-                        <div>
-                            <p className="font-bold text-sm">Bunny Blasters</p>
-                            <p className="text-xs text-indigo-200">Clear a path! With lasers!</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-red-500 border-2 border-red-300 shadow-md flex items-center justify-center text-xl"><span style={{ display: "inline-block", transform: "rotate(-90deg)" }}>🧲</span></div>
-                        <div>
-                            <p className="font-bold text-sm">Attract-o-Hare</p>
-                            <p className="text-xs text-indigo-200">Carrots, draw closer...</p>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-rose-500 border-2 border-rose-300 shadow-md flex items-center justify-center text-xl">❤️</div>
-                        <div>
-                            <p className="font-bold text-sm">Heart</p>
-                            <p className="text-xs text-indigo-200">+1 Life</p>
-                        </div>
-                     </div>
-                  </div>
+                  <PowerUpList />
                 </div>
               </CollapsibleContent>
             </Collapsible>
@@ -644,46 +589,7 @@ export default function Home() {
               <HighScoreList onTitleClick={() => setShowLeaderboardOverlay(true)} />
               <div className="bg-indigo-900 rounded-2xl p-6 text-white border-4 border-indigo-950 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.3)] flex-shrink-0">
                 <h3 className="font-display text-2xl mb-4 text-yellow-400">Power-Ups</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-green-500 border-2 border-green-300 shadow-md flex items-center justify-center text-xl">🛡️</div>
-                    <div>
-                      <p className="font-bold text-sm">Carro-Shield</p>
-                      <p className="text-xs text-indigo-200">Projectile Shield</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-yellow-500 border-2 border-yellow-300 shadow-md flex items-center justify-center text-xl">⚡</div>
-                    <div>
-                      <p className="font-bold text-sm">Rapid Rabbit</p>
-                      <p className="text-xs text-indigo-200">Speed + Invincibility</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-cyan-500 border-2 border-cyan-300 shadow-md flex items-center justify-center relative overflow-hidden">
-                      <span className="absolute top-[15%] bottom-[15%] w-1 bg-white rounded-full" style={{ left: "26%" }} aria-hidden />
-                      <span className="absolute top-[15%] bottom-[15%] w-1 bg-white rounded-full" style={{ right: "26%" }} aria-hidden />
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm">Bunny Blasters</p>
-                      <p className="text-xs text-indigo-200">Clear a path! With lasers!</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-red-500 border-2 border-red-300 shadow-md flex items-center justify-center text-xl"><span style={{ display: "inline-block", transform: "rotate(-90deg)" }}>🧲</span></div>
-                    <div>
-                      <p className="font-bold text-sm">Attract-o-Hare</p>
-                      <p className="text-xs text-indigo-200">Carrots, draw closer...</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-rose-500 border-2 border-rose-300 shadow-md flex items-center justify-center text-xl">❤️</div>
-                    <div>
-                      <p className="font-bold text-sm">Heart</p>
-                      <p className="text-xs text-indigo-200">+1 Life</p>
-                    </div>
-                  </div>
-                </div>
+                <PowerUpList columns={2} />
               </div>
             </div>
           </div>
@@ -762,7 +668,7 @@ export default function Home() {
                   className="flex flex-col flex-1 min-h-0"
                 >
                   <TabsList 
-                    className="w-full grid grid-cols-3 h-10 rounded-xl bg-gray-100 p-1 flex-shrink-0"
+                    className="w-full grid grid-cols-4 h-10 rounded-xl bg-gray-100 p-1 flex-shrink-0"
                     onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
                     onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
                   >
@@ -790,6 +696,14 @@ export default function Home() {
                     >
                       Mobile
                     </TabsTrigger>
+                    <TabsTrigger 
+                      value="classic" 
+                      className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                      onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                      onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) => e.stopPropagation()}
+                    >
+                      Classic
+                    </TabsTrigger>
                   </TabsList>
                   <TabsContent 
                     value="daily" 
@@ -814,6 +728,15 @@ export default function Home() {
                     onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
                   >
                     <HighScoreListContent scores={mobileTop20} />
+                  </TabsContent>
+                  <TabsContent 
+                    value="classic" 
+                    className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mx-1 px-1 overscroll-contain mt-4 [&_.space-y-3>div]:min-h-[44px] data-[state=inactive]:hidden"
+                    onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+                    onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
+                  >
+                    <p className="mb-2 text-center text-xs font-bold text-gray-400">Scores from the original 20-level game</p>
+                    <HighScoreListContent scores={classicTop20} />
                   </TabsContent>
                 </Tabs>
                 </div>

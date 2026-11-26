@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { highScores, type InsertHighScore, type HighScore, type UpdateHighScore } from "@shared/schema";
+import { CURRENT_SEASON, highScores, type InsertHighScore, type HighScore, type UpdateHighScore } from "@shared/schema";
 import { desc, eq } from "drizzle-orm";
 import { promises as fs } from "fs";
 import { join } from "path";
@@ -13,18 +13,18 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  /** Top 500 of the current season plus top 500 of the classic board. */
   async getTopScores(): Promise<HighScore[]> {
     if (!db) throw new Error("Database not configured");
-    return await db
-      .select()
-      .from(highScores)
-      .orderBy(desc(highScores.score))
-      .limit(500);
+    const top = (season: number) =>
+      db!.select().from(highScores).where(eq(highScores.season, season)).orderBy(desc(highScores.score)).limit(500);
+    const [current, classic] = await Promise.all([top(CURRENT_SEASON), top(1)]);
+    return [...current, ...classic];
   }
 
   async createScore(insertScore: InsertHighScore): Promise<HighScore> {
     if (!db) throw new Error("Database not configured");
-    const [score] = await db.insert(highScores).values(insertScore).returning();
+    const [score] = await db.insert(highScores).values({ ...insertScore, season: CURRENT_SEASON }).returning();
     return score;
   }
 
@@ -98,6 +98,7 @@ class FileStorage implements IStorage {
             ...s,
             createdAt,
             device,
+            season: typeof s.season === "number" ? s.season : 1,
           };
         });
       }
@@ -132,18 +133,22 @@ class FileStorage implements IStorage {
     }
   }
 
+  /** Top 500 of the current season plus top 500 of the classic board. */
   async getTopScores(): Promise<HighScore[]> {
-    return [...this.scores]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 500)
-      .map(({ id, name, score, level, device, createdAt }) => ({
-        id,
-        name,
-        score,
-        level,
-        device: device ?? "unknown",
-        createdAt: createdAt ?? new Date(),
-      }));
+    const top = (season: number) =>
+      this.scores
+        .filter((s) => (s.season ?? 1) === season)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 500);
+    return [...top(CURRENT_SEASON), ...top(1)].map(({ id, name, score, level, device, createdAt, season }) => ({
+      id,
+      name,
+      score,
+      level,
+      device: device ?? "unknown",
+      createdAt: createdAt ?? new Date(),
+      season: season ?? 1,
+    }));
   }
 
   async createScore(insertScore: InsertHighScore): Promise<HighScore> {
@@ -154,6 +159,7 @@ class FileStorage implements IStorage {
       level: insertScore.level,
       device: insertScore.device ?? "unknown",
       createdAt: new Date(),
+      season: CURRENT_SEASON,
     };
     this.scores.push(row);
     await this.saveScores();
@@ -161,13 +167,14 @@ class FileStorage implements IStorage {
   }
 
   async getAllScores(): Promise<HighScore[]> {
-    return [...this.scores].sort((a, b) => b.score - a.score).map(({ id, name, score, level, device, createdAt }) => ({
+    return [...this.scores].sort((a, b) => b.score - a.score).map(({ id, name, score, level, device, createdAt, season }) => ({
       id,
       name,
       score,
       level,
       device: device ?? "unknown",
       createdAt: createdAt ?? new Date(),
+      season: season ?? 1,
     }));
   }
 
@@ -180,7 +187,7 @@ class FileStorage implements IStorage {
     if (data.level !== undefined) row.level = data.level;
     if (data.device !== undefined) row.device = data.device;
     await this.saveScores();
-    return { ...row, device: row.device ?? "unknown", createdAt: row.createdAt ?? new Date() };
+    return { ...row, device: row.device ?? "unknown", createdAt: row.createdAt ?? new Date(), season: row.season ?? 1 };
   }
 
   async deleteScore(id: number): Promise<boolean> {

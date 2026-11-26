@@ -78,4 +78,31 @@ job(path.join(SRC, "images", "waterMask.png"), path.join(OUT, "images", "waterMa
   "1",
 ]);
 
+// --- Tier backgrounds: colour-graded copies of the base tile; land and water graded separately
+// (the water mask's alpha picks which grade applies), so lakes stay readable in every tier.
+console.log("Tier backgrounds:");
+const TIER_GRADES = {
+  autumn: ["hue=h=-30:s=1.0,colorbalance=rm=0.08:gm=-0.02:bm=-0.1:rs=0.04,eq=saturation=0.92:brightness=-0.02", "colorbalance=rm=0.03:bm=-0.02"],
+  frost: ["eq=saturation=0.25:brightness=0.22:contrast=0.85,colorbalance=bm=0.12:bh=0.08", "eq=saturation=0.35:brightness=0.25,colorbalance=bm=0.15:rm=0.05:gm=0.08"],
+  storm: ["eq=saturation=0.4:brightness=-0.26:contrast=1.08:gamma=0.9,colorbalance=bm=0.12:bs=0.06:rm=-0.05:gm=-0.02", "eq=saturation=0.45:brightness=-0.26,colorbalance=bm=0.12:bs=0.06"],
+  night: ["eq=saturation=0.45:brightness=-0.36:gamma=0.85,colorbalance=bs=0.18:bm=0.18:rm=-0.08:gm=-0.04", "eq=saturation=0.6:brightness=-0.32,colorbalance=bm=0.22:bs=0.1:rm=-0.1"],
+};
+{
+  const base = path.join(SRC, "images", "baseTile.png");
+  const mask = path.join(SRC, "images", "waterMask.png");
+  for (const [name, [land, water]] of Object.entries(TIER_GRADES)) {
+    const out = path.join(OUT, "images", "tiers", `${name}.webp`);
+    if (!stale(base, out)) continue;
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    ffmpeg([
+      "-i", base, "-i", mask,
+      "-filter_complex",
+      `[0]format=rgb24,split[a][b];[a]${land},format=rgb24[l];[b]${water},format=rgb24[w];[1]scale=1024:1024,format=rgba,alphaextract,format=gray,format=rgb24[m];[l][w][m]maskedmerge,format=rgb24`,
+      ...WEBP(86),
+      out,
+    ]);
+    console.log(`  ${path.relative(ROOT, out)}  (${Math.round(fs.statSync(out).size / 1024)} KB)`);
+  }
+}
+
 console.log("Done.");
