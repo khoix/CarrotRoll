@@ -93,6 +93,7 @@ Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls an
 | `npm start` | Run production build |
 | `npm run check` | Typecheck with `tsc` |
 | `npm run sim` | Balance simulator: plays hundreds of seeded games with bots (`-- --runs 200 --world mobile --compare script/sim-baseline.json`) |
+| `npx tsx script/boss-test.ts` | Boss dodge test: one boss fight, no power-ups, hits per attack pattern (`--level 5 --input keys` for desktop keyboard movement) |
 | `npm run check:daily` | Checks that a daily challenge seed gives the same levels whatever the player does |
 | `npm run generate-sounds` | Fill in any missing sounds with placeholders (never overwrites real ones) |
 | `npm run optimize-assets` | Re-encode masters in `assets-src/` into web assets (needs `ffmpeg`) |

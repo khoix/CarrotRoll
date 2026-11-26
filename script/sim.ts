@@ -12,115 +12,13 @@
  * runs of the same bots before and after a change rather than reading absolute numbers.
  */
 import fs from "fs";
-import { GameEngine, type Threat } from "../client/src/game/engine";
+import { GameEngine } from "../client/src/game/engine";
 import { FINAL_LEVEL, LEVELS_PER_TIER } from "../client/src/game/content";
 import { mulberry32 } from "../client/src/game/rng";
-
-type BotConfig = {
-  name: string;
-  /** How often the bot re-decides (ms of game time). */
-  reactMs: number;
-  /** How far ahead it predicts threats (s). */
-  lookahead: number;
-  /** Extra clearance it wants around threats (px). */
-  margin: number;
-  /** Pull toward carrots and power-ups. */
-  greed: number;
-  /** Random error added to its judgement. */
-  noise: number;
-};
-
-const BOTS: BotConfig[] = [
-  // Roughly a casual player: slow to react, short-sighted, often misjudges
-  { name: "casual", reactMs: 300, lookahead: 0.3, margin: 18, greed: 3000, noise: 1.2 },
-  // Roughly a strong player: quick and forward-looking, still imperfect
-  { name: "expert", reactMs: 250, lookahead: 0.35, margin: 18, greed: 3000, noise: 1.0 },
-];
-
-const WORLDS = {
-  desktop: { w: 800, h: 600 },
-  // iPhone portrait with the 1.25x mobile zoom (480 wide, height from the screen's aspect)
-  mobile: { w: 480, h: 817 },
-} as const;
+import { BOTS, WORLDS, think, type BotConfig } from "./bot";
 
 const FRAME_MS = 1000 / 60;
 const MAX_GAME_S = 60 * 60;
-const DIRS = Array.from({ length: 16 }, (_, i) => [Math.cos((i / 16) * Math.PI * 2), Math.sin((i / 16) * Math.PI * 2)] as const);
-const RADII = [45, 100, 170];
-
-/** Value of each collectible to the bot (0 = ignore, negative = avoid). */
-function pickupValue(type: string, e: GameEngine): number {
-  if (type === "carrot") return 1;
-  if (type === "carrot_golden") return 3;
-  if (type === "carrot_rotten") return -0.6;
-  if (type === "powerup_heart") return e.lives < 3 ? 2 : 0.8;
-  if (type.startsWith("powerup_")) return 0.9;
-  return 0;
-}
-
-function think(e: GameEngine, bot: BotConfig, rng: () => number) {
-  const p = e.player;
-  const pcx = p.x + p.width / 2;
-  const pcy = p.y + p.height / 2;
-  const speed = p.speed * 2.5;
-  const threats: Threat[] = [];
-  e.forEachThreat((t) => threats.push(t));
-  const zones: { x0: number; x1: number; from: number; to: number }[] = [];
-  e.forEachZone((z) => zones.push(z));
-  const floor = e.carrotRestY - 10 - 20 - 18; // keep the bunny's bottom clear of the giant carrot's wobble
-  const safeMode = p.speedBoostTimer > 0.4 || (p.invincible && p.invincibilityTimer > 0.4);
-
-  let best = { x: pcx, y: pcy, score: Infinity };
-  const consider = (cx: number, cy: number) => {
-    cx = Math.max(22, Math.min(e.W - 22, cx));
-    cy = Math.max(22, Math.min(floor, cy));
-    const dist = Math.hypot(cx - pcx, cy - pcy);
-    const travel = dist / speed;
-    let danger = 0;
-    if (!safeMode) {
-      for (const t of threats) {
-        for (let k = 0; k <= 6; k++) {
-          const tau = (k / 6) * bot.lookahead;
-          const f = travel > 0 ? Math.min(1, tau / travel) : 1;
-          const bx = pcx + (cx - pcx) * f;
-          const by = pcy + (cy - pcy) * f;
-          const d = Math.hypot(t.x + t.vx * tau - bx, t.y + t.vy * tau - by) - t.r - 20;
-          const gap = bot.margin - d;
-          if (gap > 0) danger += gap * gap * (1 - 0.5 * (tau / bot.lookahead));
-        }
-      }
-    }
-    // Column warnings (icicles, lightning): don't be in the column when it goes live
-    if (!safeMode) {
-      for (const z of zones) {
-        const arrive = e.time + travel * 1000;
-        const live = z.from - arrive < bot.lookahead * 1000 + 300 && z.to > e.time;
-        const inside = cx + 20 + bot.margin * 0.5 > z.x0 && cx - 20 - bot.margin * 0.5 < z.x1;
-        if (live && inside) danger += 4000;
-      }
-    }
-    // Stay off the walls a little
-    const edge = Math.min(cx, e.W - cx, cy);
-    if (edge < 50) danger += (50 - edge) * 4;
-    // Pull toward the best nearby pickup (predicted where it will be)
-    let pull = 0;
-    for (const o of e.collectibles) {
-      if (!o.active) continue;
-      const v = pickupValue(o.type, e);
-      if (v === 0) continue;
-      const ox = o.x + o.width / 2 + o.vx * travel;
-      const oy = o.y + o.height / 2 + o.vy * travel;
-      if (oy > floor + 10) continue;
-      const g = (bot.greed * v) / (Math.hypot(ox - cx, oy - cy) + 40);
-      if (Math.abs(g) > Math.abs(pull)) pull = g;
-    }
-    const score = danger - pull + rng() * bot.noise * 60 + dist * 0.05;
-    if (score < best.score) best = { x: cx, y: cy, score };
-  };
-  consider(pcx, pcy);
-  for (const r of RADII) for (const [dx, dy] of DIRS) consider(pcx + dx * r, pcy + dy * r);
-  e.dragTarget = { x: best.x, y: best.y };
-}
 
 type BossResult = { level: number; outcome: "defeated" | "survived" | "died"; seconds: number };
 type RunResult = { seed: number; level: number; ending: boolean; seconds: number; deathCause: string | null; levelTimes: number[]; bosses: BossResult[] };
