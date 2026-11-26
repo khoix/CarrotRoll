@@ -67,7 +67,7 @@ export default function Home() {
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const isMobile = useIsMobile();
   const { data: scores, refetch: refetchScores, isFetching: scoresFetching } = useScores();
-  const { daily: dailyTop20, overall: overallTop20, mobile: mobileTop20, classic: classicTop20 } = useMemo(
+  const { challenge: challengeTop20, daily: dailyTop20, overall: overallTop20, mobile: mobileTop20, classic: classicTop20 } = useMemo(
     () => splitLeaderboard(scores as ScoreRow[] | undefined),
     [scores]
   );
@@ -523,7 +523,11 @@ export default function Home() {
                 <ChevronDown className="w-5 h-5 transition-transform duration-200 data-[state=open]:rotate-180" />
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-2">
-                <StartMenuCard onStartClick={() => { unlockAudio(); setLocation("/play"); }} className="max-w-none" />
+                <StartMenuCard
+                  onStartClick={() => { unlockAudio(); setLocation("/play"); }}
+                  onDailyClick={() => { unlockAudio(); setLocation("/play?daily=1"); }}
+                  className="max-w-none"
+                />
               </CollapsibleContent>
             </Collapsible>
             <button
@@ -664,25 +668,34 @@ export default function Home() {
                   className="flex flex-col flex-1 min-h-0"
                 >
                 <Tabs 
-                  defaultValue={dailyTop20.length > 0 ? "daily" : overallTop20.length > 0 ? "overall" : "mobile"} 
+                  defaultValue={challengeTop20.length > 0 ? "challenge" : dailyTop20.length > 0 ? "daily" : overallTop20.length > 0 ? "overall" : "mobile"} 
                   className="flex flex-col flex-1 min-h-0"
                 >
                   <TabsList 
-                    className="w-full grid grid-cols-4 h-10 rounded-xl bg-gray-100 p-1 flex-shrink-0"
+                    className="w-full grid grid-cols-5 h-10 rounded-xl bg-gray-100 p-1 flex-shrink-0"
                     onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
                     onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
                   >
                     <TabsTrigger 
-                      value="daily" 
-                      className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                      value="challenge" 
+                      className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                      title="Today's daily challenge"
                       onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
                       onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) => e.stopPropagation()}
                     >
-                      Daily
+                      🎯
+                    </TabsTrigger>
+                    <TabsTrigger 
+                      value="daily" 
+                      className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                      onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                      onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) => e.stopPropagation()}
+                    >
+                      Today
                     </TabsTrigger>
                     <TabsTrigger 
                       value="overall" 
-                      className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                      className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
                       onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
                       onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) => e.stopPropagation()}
                     >
@@ -690,7 +703,7 @@ export default function Home() {
                     </TabsTrigger>
                     <TabsTrigger 
                       value="mobile" 
-                      className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                      className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
                       onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
                       onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) => e.stopPropagation()}
                     >
@@ -698,13 +711,22 @@ export default function Home() {
                     </TabsTrigger>
                     <TabsTrigger 
                       value="classic" 
-                      className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                      className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
                       onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
                       onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) => e.stopPropagation()}
                     >
                       Classic
                     </TabsTrigger>
                   </TabsList>
+                  <TabsContent 
+                    value="challenge" 
+                    className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mx-1 px-1 overscroll-contain mt-4 [&_.space-y-3>div]:min-h-[44px] data-[state=inactive]:hidden"
+                    onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+                    onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
+                  >
+                    <p className="mb-2 text-center text-xs font-bold text-gray-400">Today's daily challenge: same levels for everyone, new each day (UTC)</p>
+                    <HighScoreListContent scores={challengeTop20} />
+                  </TabsContent>
                   <TabsContent 
                     value="daily" 
                     className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mx-1 px-1 overscroll-contain mt-4 [&_.space-y-3>div]:min-h-[44px] data-[state=inactive]:hidden"

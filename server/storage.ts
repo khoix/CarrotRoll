@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { CURRENT_SEASON, highScores, type InsertHighScore, type HighScore, type UpdateHighScore } from "@shared/schema";
-import { desc, eq } from "drizzle-orm";
+import { previousDay, utcDay } from "@shared/daily";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { promises as fs } from "fs";
 import { join } from "path";
 
@@ -13,18 +14,24 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  /** Top 500 of the current season plus top 500 of the classic board. */
+  /**
+   * Top 500 normal runs of the current season, top 500 of the classic board, and the top 100 of
+   * today's and yesterday's daily challenges.
+   */
   async getTopScores(): Promise<HighScore[]> {
     if (!db) throw new Error("Database not configured");
     const top = (season: number) =>
-      db!.select().from(highScores).where(eq(highScores.season, season)).orderBy(desc(highScores.score)).limit(500);
-    const [current, classic] = await Promise.all([top(CURRENT_SEASON), top(1)]);
-    return [...current, ...classic];
+      db!.select().from(highScores).where(and(eq(highScores.season, season), isNull(highScores.challenge))).orderBy(desc(highScores.score)).limit(500);
+    const today = utcDay();
+    const challenge = (day: string) =>
+      db!.select().from(highScores).where(eq(highScores.challenge, day)).orderBy(desc(highScores.score)).limit(100);
+    const [current, classic, daily, yesterday] = await Promise.all([top(CURRENT_SEASON), top(1), challenge(today), challenge(previousDay(today))]);
+    return [...current, ...classic, ...daily, ...yesterday];
   }
 
   async createScore(insertScore: InsertHighScore): Promise<HighScore> {
     if (!db) throw new Error("Database not configured");
-    const [score] = await db.insert(highScores).values({ ...insertScore, season: CURRENT_SEASON }).returning();
+    const [score] = await db.insert(highScores).values({ ...insertScore, challenge: insertScore.challenge ?? null, season: CURRENT_SEASON }).returning();
     return score;
   }
 
@@ -53,6 +60,19 @@ function isToday(d: Date): boolean {
     d.getMonth() === now.getMonth() &&
     d.getFullYear() === now.getFullYear()
   );
+}
+
+function toRow({ id, name, score, level, device, createdAt, season, challenge }: HighScore): HighScore {
+  return {
+    id,
+    name,
+    score,
+    level,
+    device: device ?? "unknown",
+    createdAt: createdAt ?? new Date(),
+    season: season ?? 1,
+    challenge: challenge ?? null,
+  };
 }
 
 /** File-based storage that persists scores to disk when DATABASE_URL is not set. */
@@ -133,22 +153,13 @@ class FileStorage implements IStorage {
     }
   }
 
-  /** Top 500 of the current season plus top 500 of the classic board. */
+  /** Same shape as DatabaseStorage.getTopScores. */
   async getTopScores(): Promise<HighScore[]> {
-    const top = (season: number) =>
-      this.scores
-        .filter((s) => (s.season ?? 1) === season)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 500);
-    return [...top(CURRENT_SEASON), ...top(1)].map(({ id, name, score, level, device, createdAt, season }) => ({
-      id,
-      name,
-      score,
-      level,
-      device: device ?? "unknown",
-      createdAt: createdAt ?? new Date(),
-      season: season ?? 1,
-    }));
+    const sorted = [...this.scores].sort((a, b) => b.score - a.score);
+    const top = (season: number) => sorted.filter((s) => (s.season ?? 1) === season && !s.challenge).slice(0, 500);
+    const today = utcDay();
+    const challenge = (day: string) => sorted.filter((s) => s.challenge === day).slice(0, 100);
+    return [...top(CURRENT_SEASON), ...top(1), ...challenge(today), ...challenge(previousDay(today))].map(toRow);
   }
 
   async createScore(insertScore: InsertHighScore): Promise<HighScore> {
@@ -160,6 +171,7 @@ class FileStorage implements IStorage {
       device: insertScore.device ?? "unknown",
       createdAt: new Date(),
       season: CURRENT_SEASON,
+      challenge: insertScore.challenge ?? null,
     };
     this.scores.push(row);
     await this.saveScores();
@@ -167,15 +179,7 @@ class FileStorage implements IStorage {
   }
 
   async getAllScores(): Promise<HighScore[]> {
-    return [...this.scores].sort((a, b) => b.score - a.score).map(({ id, name, score, level, device, createdAt, season }) => ({
-      id,
-      name,
-      score,
-      level,
-      device: device ?? "unknown",
-      createdAt: createdAt ?? new Date(),
-      season: season ?? 1,
-    }));
+    return [...this.scores].sort((a, b) => b.score - a.score).map(toRow);
   }
 
   async updateScore(id: number, data: UpdateHighScore): Promise<HighScore | null> {
@@ -187,7 +191,7 @@ class FileStorage implements IStorage {
     if (data.level !== undefined) row.level = data.level;
     if (data.device !== undefined) row.device = data.device;
     await this.saveScores();
-    return { ...row, device: row.device ?? "unknown", createdAt: row.createdAt ?? new Date(), season: row.season ?? 1 };
+    return toRow(row);
   }
 
   async deleteScore(id: number): Promise<boolean> {

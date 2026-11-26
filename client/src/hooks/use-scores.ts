@@ -32,6 +32,7 @@ function writeLocal(input: InsertHighScore): Score {
     device: validated.device,
     createdAt: new Date().toISOString(),
     season: CURRENT_SEASON,
+    challenge: validated.challenge ?? null,
   } as unknown as Score;
   const next = [...list, entry].sort((a, b) => b.score - a.score).slice(0, 100);
   try {

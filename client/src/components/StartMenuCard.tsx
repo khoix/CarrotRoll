@@ -2,10 +2,12 @@ import { Button } from "@/components/ui/button";
 
 interface StartMenuCardProps {
   onStartClick: () => void;
+  /** Shows a "Daily Challenge" button when set. */
+  onDailyClick?: () => void;
   className?: string;
 }
 
-export default function StartMenuCard({ onStartClick, className = "" }: StartMenuCardProps) {
+export default function StartMenuCard({ onStartClick, onDailyClick, className = "" }: StartMenuCardProps) {
   return (
     <div className={`bg-white p-8 rounded-3xl border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] text-center max-w-md w-full ${className}`.trim()}>
       <h1 className="text-6xl font-display text-primary mb-2 text-shadow-lg rotate-[-2deg]">CARROT ROLL</h1>
@@ -17,6 +19,17 @@ export default function StartMenuCard({ onStartClick, className = "" }: StartMen
       >
         Start Game
       </Button>
+      {onDailyClick && (
+        <>
+          <Button
+            onClick={onDailyClick}
+            className="w-full h-12 text-xl font-display uppercase tracking-wider bg-purple-500 hover:bg-purple-600 text-white border-b-4 border-purple-700 active:border-b-0 active:translate-y-1"
+          >
+            🎯 Daily Challenge
+          </Button>
+          <p className="mt-2 text-xs font-bold text-gray-400">Same levels for everyone today. New ones at midnight UTC.</p>
+        </>
+      )}
 
       <div className="grid grid-cols-2 gap-4 mt-8">
         <div className="bg-orange-50 p-4 rounded-xl border-2 border-orange-100 text-center overflow-visible">

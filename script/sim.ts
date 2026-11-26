@@ -7,138 +7,44 @@
  *   npm run sim -- --save script/sim-baseline.json     # record a baseline
  *   npm run sim -- --compare script/sim-baseline.json  # compare against it
  *
- * The bots steer exactly like a finger drag (engine.dragTarget) with blasters on auto-fire,
- * so they play by the same rules as a touch player. They are a yardstick, not a human: compare
+ * The bots steer like a finger drag (engine.dragTarget) on mobile, and with the arrow keys on
+ * desktop (--input drag|keys overrides), with blasters on auto-fire, so they play by the same
+ * rules as a player on that device. They are a yardstick, not a human: compare
  * runs of the same bots before and after a change rather than reading absolute numbers.
  */
 import fs from "fs";
-import { GameEngine, type Threat } from "../client/src/game/engine";
+import { GameEngine, KEY_SPEED_MULT } from "../client/src/game/engine";
 import { FINAL_LEVEL, LEVELS_PER_TIER } from "../client/src/game/content";
 import { mulberry32 } from "../client/src/game/rng";
-
-type BotConfig = {
-  name: string;
-  /** How often the bot re-decides (ms of game time). */
-  reactMs: number;
-  /** How far ahead it predicts threats (s). */
-  lookahead: number;
-  /** Extra clearance it wants around threats (px). */
-  margin: number;
-  /** Pull toward carrots and power-ups. */
-  greed: number;
-  /** Random error added to its judgement. */
-  noise: number;
-};
-
-const BOTS: BotConfig[] = [
-  // Roughly a casual player: slow to react, short-sighted, often misjudges
-  { name: "casual", reactMs: 300, lookahead: 0.3, margin: 18, greed: 3000, noise: 1.2 },
-  // Roughly a strong player: quick and forward-looking, still imperfect
-  { name: "expert", reactMs: 250, lookahead: 0.35, margin: 18, greed: 3000, noise: 1.0 },
-];
-
-const WORLDS = {
-  desktop: { w: 800, h: 600 },
-  // iPhone portrait with the 1.25x mobile zoom (480 wide, height from the screen's aspect)
-  mobile: { w: 480, h: 817 },
-} as const;
+import { BOTS, WORLDS, steerWithKeys, think, type BotConfig } from "./bot";
 
 const FRAME_MS = 1000 / 60;
 const MAX_GAME_S = 60 * 60;
-const DIRS = Array.from({ length: 16 }, (_, i) => [Math.cos((i / 16) * Math.PI * 2), Math.sin((i / 16) * Math.PI * 2)] as const);
-const RADII = [45, 100, 170];
-
-/** Value of each collectible to the bot (0 = ignore, negative = avoid). */
-function pickupValue(type: string, e: GameEngine): number {
-  if (type === "carrot") return 1;
-  if (type === "carrot_golden") return 3;
-  if (type === "carrot_rotten") return -0.6;
-  if (type === "powerup_heart") return e.lives < 3 ? 2 : 0.8;
-  if (type.startsWith("powerup_")) return 0.9;
-  return 0;
-}
-
-function think(e: GameEngine, bot: BotConfig, rng: () => number) {
-  const p = e.player;
-  const pcx = p.x + p.width / 2;
-  const pcy = p.y + p.height / 2;
-  const speed = p.speed * 2.5;
-  const threats: Threat[] = [];
-  e.forEachThreat((t) => threats.push(t));
-  const zones: { x0: number; x1: number; from: number; to: number }[] = [];
-  e.forEachZone((z) => zones.push(z));
-  const floor = e.carrotRestY - 10 - 20 - 18; // keep the bunny's bottom clear of the giant carrot's wobble
-  const safeMode = p.speedBoostTimer > 0.4 || (p.invincible && p.invincibilityTimer > 0.4);
-
-  let best = { x: pcx, y: pcy, score: Infinity };
-  const consider = (cx: number, cy: number) => {
-    cx = Math.max(22, Math.min(e.W - 22, cx));
-    cy = Math.max(22, Math.min(floor, cy));
-    const dist = Math.hypot(cx - pcx, cy - pcy);
-    const travel = dist / speed;
-    let danger = 0;
-    if (!safeMode) {
-      for (const t of threats) {
-        for (let k = 0; k <= 6; k++) {
-          const tau = (k / 6) * bot.lookahead;
-          const f = travel > 0 ? Math.min(1, tau / travel) : 1;
-          const bx = pcx + (cx - pcx) * f;
-          const by = pcy + (cy - pcy) * f;
-          const d = Math.hypot(t.x + t.vx * tau - bx, t.y + t.vy * tau - by) - t.r - 20;
-          const gap = bot.margin - d;
-          if (gap > 0) danger += gap * gap * (1 - 0.5 * (tau / bot.lookahead));
-        }
-      }
-    }
-    // Column warnings (icicles, lightning): don't be in the column when it goes live
-    if (!safeMode) {
-      for (const z of zones) {
-        const arrive = e.time + travel * 1000;
-        const live = z.from - arrive < bot.lookahead * 1000 + 300 && z.to > e.time;
-        const inside = cx + 20 + bot.margin * 0.5 > z.x0 && cx - 20 - bot.margin * 0.5 < z.x1;
-        if (live && inside) danger += 4000;
-      }
-    }
-    // Stay off the walls a little
-    const edge = Math.min(cx, e.W - cx, cy);
-    if (edge < 50) danger += (50 - edge) * 4;
-    // Pull toward the best nearby pickup (predicted where it will be)
-    let pull = 0;
-    for (const o of e.collectibles) {
-      if (!o.active) continue;
-      const v = pickupValue(o.type, e);
-      if (v === 0) continue;
-      const ox = o.x + o.width / 2 + o.vx * travel;
-      const oy = o.y + o.height / 2 + o.vy * travel;
-      if (oy > floor + 10) continue;
-      const g = (bot.greed * v) / (Math.hypot(ox - cx, oy - cy) + 40);
-      if (Math.abs(g) > Math.abs(pull)) pull = g;
-    }
-    const score = danger - pull + rng() * bot.noise * 60 + dist * 0.05;
-    if (score < best.score) best = { x: cx, y: cy, score };
-  };
-  consider(pcx, pcy);
-  for (const r of RADII) for (const [dx, dy] of DIRS) consider(pcx + dx * r, pcy + dy * r);
-  e.dragTarget = { x: best.x, y: best.y };
-}
 
 type BossResult = { level: number; outcome: "defeated" | "survived" | "died"; seconds: number };
 type RunResult = { seed: number; level: number; ending: boolean; seconds: number; deathCause: string | null; levelTimes: number[]; bosses: BossResult[] };
 
-function runOne(bot: BotConfig, seed: number, world: { w: number; h: number }): RunResult {
+/** Desktop players steer with the keyboard (mouse drag is off); touch players drag. */
+type Input = "drag" | "keys";
+
+function runOne(bot: BotConfig, seed: number, world: { w: number; h: number }, input: Input): RunResult {
   const noop = () => {};
   const e = new GameEngine({ sfx: noop, ambient: noop, goldenBunny: noop, hud: noop, phase: noop });
   e.setWorldSize(world.w, world.h);
   e.autoFire = true;
+  e.controls = input === "keys" ? "keys" : "touch";
   const botRng = mulberry32(seed ^ 0x9e3779b9);
   e.start(1, seed);
   const t0 = e.time;
   let nextThink = 0;
+  let target: { x: number; y: number } | null = null;
   while ((e.phase === "countdown" || e.phase === "playing") && (e.time - t0) / 1000 < MAX_GAME_S) {
     if (e.time >= nextThink) {
-      think(e, bot, botRng);
+      think(e, bot, botRng, input === "keys" ? KEY_SPEED_MULT : 2.5);
+      target = e.dragTarget;
       nextThink = e.time + bot.reactMs;
     }
+    if (input === "keys") steerWithKeys(e, target);
     e.advance(FRAME_MS);
   }
   return {
@@ -235,16 +141,17 @@ function main() {
   const runs = Number(arg("runs", "100"));
   const worldName = (arg("world", "desktop") as keyof typeof WORLDS) ?? "desktop";
   const world = WORLDS[worldName];
+  const input = (arg("input") ?? (worldName === "desktop" ? "keys" : "drag")) as Input;
   const onlyBot = arg("bot");
   const seed0 = Number(arg("seed", "1000"));
   const summaries: Summary[] = [];
   for (const bot of BOTS.filter((b) => !onlyBot || b.name === onlyBot)) {
     const started = Date.now();
     const results: RunResult[] = [];
-    for (let i = 0; i < runs; i++) results.push(runOne(bot, seed0 + i, world));
+    for (let i = 0; i < runs; i++) results.push(runOne(bot, seed0 + i, world, input));
     const s = summarize(bot.name, results);
     summaries.push(s);
-    console.log(`\n${bot.name} bot · ${runs} runs · ${worldName} ${world.w}x${world.h} · ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    console.log(`\n${bot.name} bot · ${runs} runs · ${worldName} ${world.w}x${world.h} (${input === "keys" ? "keyboard" : "drag"}) · ${((Date.now() - started) / 1000).toFixed(1)} s`);
     console.log(`  ending reached: ${s.endingRate}% (final level ${s.finalLevel})`);
     console.log(`  level reached: median ${s.levelMedian}, middle half ${s.levelP25}-${s.levelP75}; median run ${s.medianRunMinutes} min`);
     console.log(`  reached: ${Object.entries(s.reachRate).map(([k, v]) => `${k} ${v}%`).join(" · ")}`);
@@ -253,7 +160,7 @@ function main() {
     if (s.bosses && Object.keys(s.bosses).length)
       console.log(`  bosses: ${Object.entries(s.bosses).map(([k, b]) => `${k} ${b.fights} fights: won ${b.defeated}% / survived ${b.survived}% / lost ${b.died}% (${b.meanSeconds}s)`).join(" · ")}`);
   }
-  const out = { world: worldName, runs, seed0, date: new Date().toISOString().slice(0, 10), summaries };
+  const out = { world: worldName, input, runs, seed0, date: new Date().toISOString().slice(0, 10), summaries };
   const save = arg("save");
   if (save) {
     fs.writeFileSync(save, JSON.stringify(out, null, 2) + "\n");

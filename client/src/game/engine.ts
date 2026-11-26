@@ -29,6 +29,18 @@ export const PLAYER_SIZE = 40;
 export const BASE_SPEED = 300;
 /** Drag control: max chase speed as a multiple of the current player speed (prevents teleporting through hazards). */
 const DRAG_SPEED_MULT = 2.5;
+/** Arrow keys / WASD move at this multiple of the bunny's speed (8 directions, with a short ramp-up). */
+export const KEY_SPEED_MULT = 1.4;
+/**
+ * Hazard tuning per control scheme, on top of the tier tables: how often hazards come (rate)
+ * and how fast they fly (speed). A finger drag steers faster and finer than the keyboard, so
+ * touch play gets more and faster hazards to land in the same place (see script/sim.ts).
+ */
+const envNum = (k: string, d: number) => Number(globalThis.process?.env?.[k] ?? d);
+export const CONTROL_TUNING = {
+  keys: { rate: envNum("KEYS_RATE", 0.8), speed: envNum("KEYS_SPEED", 0.9) },
+  touch: { rate: envNum("TOUCH_RATE", 1.15), speed: envNum("TOUCH_SPEED", 1.08) },
+};
 const FALL_SPEED = 180; // SCROLL_SPEED 3 px/frame × 60
 const ATTRACT_RADIUS = 400;
 const ATTRACT_STRENGTH = 480;
@@ -127,15 +139,36 @@ export type BossState = {
   /** Last time it took damage (for the hit flash). */
   hitAt: number;
   done: boolean;
+  /** Hits the bunny took during the fight. */
+  hits: number;
 };
 
 const BOSS_PATTERN_MS = 2600;
 const BOSS_REST_MS = 700;
+/** After a boss: the carrot sinks away and the tally shows for this long, then Ready / Set / Go. */
+export const INTERMISSION_MS = 4600;
+const CARROT_SINK_MS = 1100;
+/** Angle between neighbouring spikes in the boss's fan (radians). */
+const FAN_SPREAD = 0.34;
 
 export type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string; gravity: number };
 export type Popup = { x: number; y: number; text: string; start: number; color: string; big?: boolean };
 
 export type Announcement = { kind: "new" | "tier" | "boss"; title: string; body?: string };
+
+/** What the between-tiers tally card shows after a boss fight. */
+export type Intermission = {
+  bossName: string;
+  defeated: boolean;
+  /** Fight length in seconds. */
+  seconds: number;
+  hits: number;
+  bonus: number;
+  heart: boolean;
+  scoreFrom: number;
+  scoreTo: number;
+  next: { level: number; tierName: string; newHazards: string[] };
+};
 
 export interface EngineEvents {
   sfx(id: SfxId): void;
@@ -149,6 +182,8 @@ export interface EngineEvents {
   discovered?(id: string): void;
   /** The tier changed (0-based index into TIERS); the host switches the look. */
   tier?(index: number): void;
+  /** A boss was beaten: show the tally card (null hides it). */
+  intermission?(info: Intermission | null): void;
 }
 
 /** A harmful thing's centre, velocity and radius (used by near-miss scoring and the simulation bots). */
@@ -195,6 +230,21 @@ function overlaps(a: { x: number; y: number; width: number; height: number }, b:
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
+/**
+ * Hazards only hurt inside their drawn shape: their hit box is inset this much on each side
+ * (a 40 px spiky ball hits as 28 px), so a near-miss that looks clear is clear.
+ */
+export const HAZARD_HIT_INSET = 0.15;
+
+/** The bunny's box against a hazard's (inset) hit box; also the gap between them when apart. */
+function hazardGap(p: { x: number; y: number; width: number; height: number }, o: { x: number; y: number; width: number; height: number }) {
+  const ix = o.width * HAZARD_HIT_INSET;
+  const iy = o.height * HAZARD_HIT_INSET;
+  const gx = Math.max(o.x + ix - (p.x + p.width), p.x - (o.x + o.width - ix), 0);
+  const gy = Math.max(o.y + iy - (p.y + p.height), p.y - (o.y + o.height - iy), 0);
+  return { hit: o.x + ix < p.x + p.width && o.x + o.width - ix > p.x && o.y + iy < p.y + p.height && o.y + o.height - iy > p.y, gap: Math.hypot(gx, gy) };
+}
+
 /** Remove inactive entities in place (no new arrays each frame). */
 function compact<T extends { active: boolean }>(arr: T[]) {
   let j = 0;
@@ -215,8 +265,14 @@ export class GameEngine {
   /** Simulation clock in ms (stops while paused). */
   time = 0;
   private acc = 0;
-  /** All gameplay randomness comes from here (seeded per game). */
+  /**
+   * Level content (spawns, positions, boss patterns) comes from `rng`, reseeded from the game's
+   * seed at the start of every level and consumed the same way every step whatever the player
+   * does, so a given seed gives every player the same levels (the daily challenge relies on it).
+   * Player-driven randomness (particles, faces, heart drops, Carrot Rain) uses `fx` instead.
+   */
   rng: Rng = mulberry32(randomSeed());
+  fx: Rng = mulberry32(randomSeed());
   seed = 0;
   /** Item ids already seen on this device (the host loads and saves it). */
   seenItems = new Set<string>();
@@ -252,6 +308,8 @@ export class GameEngine {
   /** Fire blasters automatically while the power-up is active (touch play has no fire button). */
   autoFire = false;
   damageDisabled = false;
+  /** How the player steers: "keys" (desktop) or "touch" (drag); picks the CONTROL_TUNING row. */
+  controls: "keys" | "touch" = "touch";
 
   projectiles: Entity[] = [];
   obstacles: Entity[] = [];
@@ -275,10 +333,16 @@ export class GameEngine {
   private goldenOn = false;
   private lastHud: HudState = { score: -1, level: -1, carrots: -1, lives: -1, combo: -1, comboChain: -1, boss: false };
   boss: BossState | null = null;
+  /** Between tiers after a boss: no hazards, the carrot is away, the tally card is up. */
+  intermission: { start: number; info: Intermission } | null = null;
   /** Which power-up combos are active (for visuals and the one-time popup). */
   combos = { turbo: false, magnet: false };
 
   constructor(private events: EngineEvents) {}
+
+  private get ease() {
+    return CONTROL_TUNING[this.controls];
+  }
 
   get vScale() {
     return this.H / BASE_H;
@@ -335,6 +399,7 @@ export class GameEngine {
   start(initialLevel = 1, seed = randomSeed()) {
     this.seed = seed >>> 0;
     this.rng = mulberry32(this.seed);
+    this.fx = mulberry32((this.seed ^ 0x85ebca6b) >>> 0);
     this.player = newPlayer(this.W, this.H);
     this.player.speed = this.baseSpeed;
     this.strikes = [];
@@ -342,6 +407,7 @@ export class GameEngine {
     this.decoy = null;
     this.flash = 0;
     this.boss = null;
+    this.endIntermission();
     this.combos = { turbo: false, magnet: false };
     this.nextGustAt = Infinity;
     this.tierIndex = -1;
@@ -352,7 +418,7 @@ export class GameEngine {
     this.particles = [];
     this.popups = [];
     this.sparkleTrail = [];
-    this.giantCarrot = { x: 0, y: this.H + 180, width: this.W, height: 200, angle: 0, nextShot: 0, face: Math.floor(this.rng() * 6) };
+    this.giantCarrot = { x: 0, y: this.H + 180, width: this.W, height: 200, angle: 0, nextShot: 0, face: Math.floor(this.fx() * 6) };
     this.score = 0;
     this.level = initialLevel;
     this.carrots = 0;
@@ -378,6 +444,8 @@ export class GameEngine {
 
   /** Per-level setup: queue the guaranteed early spawn of anything that unlocks here. */
   private beginLevel(startTime: number) {
+    // Same seed + same level = same level content, however long it took to get here
+    this.rng = mulberry32((this.seed ^ Math.imul(this.level + 1, 0x9e3779b1)) >>> 0);
     this.bombThisLevel = false;
     this.pendingUnlocks = itemsUnlockingAt(this.level);
     this.nextUnlockSpawn = startTime + 3000;
@@ -396,7 +464,7 @@ export class GameEngine {
     this.boss = null;
     if (isBossLevel(this.level)) {
       const def = bossForLevel(this.level);
-      this.boss = { def, hp: def.hp, start: startTime, patIdx: 0, patStart: startTime + 1200, nextFire: startTime + 1200, phase: 0, hitAt: -Infinity, done: false };
+      this.boss = { def, hp: def.hp, start: startTime, patIdx: 0, patStart: startTime + 1200, nextFire: startTime + 1200, phase: 0, hitAt: -Infinity, done: false, hits: 0 };
       this.events.announce?.({ kind: "boss", title: def.name, body: `Boss! Drain its health or survive ${BOSS_SURVIVE_S} s` });
       this.events.sfx("boss_warning");
       this.giantCarrot.face = 3;
@@ -420,11 +488,13 @@ export class GameEngine {
 
   /** Leave play without game-over (menu / unmount). */
   stop() {
+    this.endIntermission();
     this.stopAllLoops();
     this.setPhase("idle");
   }
 
   setLevel(n: number) {
+    this.endIntermission();
     this.level = Math.max(1, Math.min(FINAL_LEVEL, Math.floor(n)));
     this.carrots = 0;
     this.beginLevel(this.time);
@@ -468,7 +538,7 @@ export class GameEngine {
       vx: 0,
       vy: this.fallSpeed,
       active: true,
-      ...(isCarrot && { face: type === "carrot_rotten" ? 1 : Math.floor(this.rng() * 6) }),
+      ...(isCarrot && { face: type === "carrot_rotten" ? 1 : Math.floor(this.fx() * 6) }),
     });
   }
 
@@ -476,7 +546,7 @@ export class GameEngine {
   forEachThreat(cb: (t: Threat) => void) {
     for (const arr of [this.projectiles, this.obstacles]) {
       for (const o of arr) {
-        if (o.active && !o.reflected && HARMFUL.has(o.type)) cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: Math.max(o.width, o.height) / 2 });
+        if (o.active && !o.reflected && HARMFUL.has(o.type)) cb({ x: o.x + o.width / 2, y: o.y + o.height / 2, vx: o.vx, vy: o.vy, r: (Math.max(o.width, o.height) / 2) * (1 - 2 * HAZARD_HIT_INSET) });
       }
     }
   }
@@ -576,7 +646,14 @@ export class GameEngine {
     const gc = this.giantCarrot;
     gc.x = 0;
     gc.width = this.W;
-    if (isCountdown) {
+    if (this.intermission) {
+      // Retreat: the carrot sinks below the screen, waits out the tally, then the next level starts
+      const el = t - this.intermission.start;
+      const k = Math.min(1, el / CARROT_SINK_MS);
+      gc.y = this.carrotRestY + (this.H + 180 - this.carrotRestY) * k * k;
+      gc.angle += dt * 5 * (1 - k);
+      if (el >= INTERMISSION_MS) this.nextTier(t);
+    } else if (isCountdown) {
       const k = Math.min(1, countdownElapsed / COUNTDOWN_MS);
       const easeOut = 1 - (1 - k) * (1 - k);
       const startY = this.H + 180;
@@ -598,7 +675,7 @@ export class GameEngine {
         const aimX = this.decoy ? this.decoy.x - p.width / 2 : p.x;
         const aimY = this.decoy ? this.decoy.y - p.height / 2 : p.y;
         const angle = Math.atan2(aimY - gc.y, aimX - sourceX);
-        const speed = difficulty(this.level).shotSpeed * this.vScale;
+        const speed = difficulty(this.level).shotSpeed * this.vScale * this.ease.speed;
         const cauli = hazardRate(this.level, (r) => r.cauliChance);
         const sprout = hazardRate(this.level, (r) => r.sproutChance);
         const roll = this.rng();
@@ -611,11 +688,12 @@ export class GameEngine {
           this.projectiles.push({ x: sourceX, y: gc.y, width: 40, height: 40, type: "spike", vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, active: true, angle: 0 });
         }
         this.events.sfx("carrot_shoot");
-        gc.nextShot = difficulty(this.level).shotInterval;
+        gc.nextShot = difficulty(this.level).shotInterval / this.ease.rate;
       }
     }
 
-    if (!isCountdown) this.updatePlaying(worldDt, t, dt);
+    // (not on the step the intermission ends: the countdown takes over from there)
+    if (!isCountdown && !this.intermission && this.phase === "playing") this.updatePlaying(worldDt, t, dt);
     this.updateEffects(dt);
   }
 
@@ -641,6 +719,7 @@ export class GameEngine {
 
     const drag = this.dragTarget;
     if (drag) {
+      this.controls = "touch";
       const cx = p.x + p.width / 2;
       const cy = p.y + p.height / 2;
       const tx = Math.max(p.width / 2, Math.min(this.W - p.width / 2, drag.x));
@@ -664,9 +743,10 @@ export class GameEngine {
 
     const touch = this.touchMove;
     if (touch) {
-      // Legacy touchpad: direct, instant response
-      p.x += touch.dx * p.speed * dt;
-      p.y += touch.dy * p.speed * dt;
+      // Legacy touchpad: direct, instant response (steers like the keys, so tuned like them)
+      if (touch.dx || touch.dy) this.controls = "keys";
+      p.x += touch.dx * p.speed * KEY_SPEED_MULT * dt;
+      p.y += touch.dy * p.speed * KEY_SPEED_MULT * dt;
       p.vx = 0;
       p.vy = 0;
       this.clampPlayer();
@@ -681,13 +761,14 @@ export class GameEngine {
     if (k.a || k.ArrowLeft) tdx -= 1;
     if (k.d || k.ArrowRight) tdx += 1;
     if (tdx !== 0 || tdy !== 0) {
+      this.controls = "keys";
       const len = Math.hypot(tdx, tdy);
       tdx /= len;
       tdy /= len;
       // Same feel as the old per-frame 0.65 acceleration, made frame-rate independent.
       const a = 1 - Math.pow(1 - 0.65, dt * 60);
-      p.vx += (tdx * p.speed - p.vx) * a;
-      p.vy += (tdy * p.speed - p.vy) * a;
+      p.vx += (tdx * p.speed * KEY_SPEED_MULT - p.vx) * a;
+      p.vy += (tdy * p.speed * KEY_SPEED_MULT - p.vy) * a;
     } else {
       const dcl = 1 - Math.pow(1 - 0.75, dt * 60);
       p.vx -= p.vx * dcl;
@@ -724,19 +805,24 @@ export class GameEngine {
       this.events.sfx("blaster_shoot");
     }
 
-    const diff = difficulty(this.level);
+    const base = difficulty(this.level);
+    const diff = { ...base, ballChance: base.ballChance * this.ease.rate };
 
     // Carrot Rain: a shower of carrots and no new hazards
     if (p.rainTimer > 0) {
       if (t >= this.rainNextCarrot) {
-        this.spawnCollectible("carrot");
+        this.spawnCollectible("carrot", this.fx(), this.fx());
         this.rainNextCarrot = t + 150;
       }
     }
     // Spiky balls (and, from tier 2, chestnut burrs)
-    if (p.rainTimer <= 0 && this.rng() < perStep(diff.ballChance * (this.boss ? 0.4 : 1), dt, Math.sqrt(this.widthScale))) {
-      const burr = this.rng() < hazardRate(this.level, (r) => r.burrShare);
-      this.obstacles.push({ x: this.rng() * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: burr ? "burr" : "ball", vx: 0, vy: fall, active: true, hp: burr ? 1 : undefined });
+    // (rolls are always drawn, so the level's random sequence never depends on the player)
+    const ballRoll = this.rng();
+    const burrRoll = this.rng();
+    const ballX = this.rng();
+    if (p.rainTimer <= 0 && ballRoll < perStep(diff.ballChance * (this.boss ? 0.4 : 1), dt, Math.sqrt(this.widthScale))) {
+      const burr = burrRoll < hazardRate(this.level, (r) => r.burrShare);
+      this.obstacles.push({ x: ballX * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: burr ? "burr" : "ball", vx: 0, vy: fall, active: true, hp: burr ? 1 : undefined });
     }
     this.updateTierHazards(dt, t, p.rainTimer <= 0, this.boss ? 0.4 : 1);
 
@@ -748,17 +834,22 @@ export class GameEngine {
 
     // Collectibles
     // Collectibles arrive at the same rate on every screen shape (narrow phones aren't starved of carrots)
-    if (this.collectibles.length < diff.collectibleCap && this.rng() < perStep(0.02, dt, Math.pow(this.widthScale, 0.25))) {
-      let pick = pickCollectible(this.level, this.rng);
+    const spawnRoll = this.rng();
+    let pick = pickCollectible(this.level, this.rng);
+    const bossRollA = this.rng();
+    const bossRollB = this.rng();
+    const spawnX = this.rng();
+    const spawnFace = this.rng();
+    if (this.collectibles.length < diff.collectibleCap && spawnRoll < perStep(0.02, dt, Math.pow(this.widthScale, 0.25))) {
       if (this.boss) {
         // Boss fights: no carrots; power-ups still drop now and then
-        if (pick.startsWith("carrot") || pick === "powerup_rain") pick = this.rng() < 0.35 ? "powerup_blaster" : "powerup_invincible";
-        if (this.rng() > 0.35) pick = "carrot_none" as CollectibleType;
+        if (pick.startsWith("carrot") || pick === "powerup_rain") pick = bossRollA < 0.35 ? "powerup_blaster" : "powerup_invincible";
+        if (bossRollB > 0.35) pick = "carrot_none" as CollectibleType;
       }
       if (pick === "powerup_bomb" && this.bombThisLevel) pick = "carrot"; // one bomb per level at most
       if (pick === "powerup_slowmo" && p.slowTimer > 0) pick = "carrot";
       if (pick === "powerup_bomb") this.bombThisLevel = true;
-      if ((pick as string) !== "carrot_none") this.spawnCollectible(pick);
+      if ((pick as string) !== "carrot_none") this.spawnCollectible(pick, spawnX, spawnFace);
     }
 
     // Move entities
@@ -880,7 +971,7 @@ export class GameEngine {
             this.obstacles.push({ x: ex - 12, y: ey - 12, width: 24, height: 24, type: "burr_small", vx: Math.cos(a) * v, vy: Math.sin(a) * v, active: true });
           }
         }
-        if (this.rng() < 0.1) {
+        if (this.fx() < 0.1) {
           this.collectibles.push({ x: ball.x, y: ball.y, width: 30, height: 30, type: "powerup_heart", vx: 0, vy: fall, active: true });
         }
         for (const other of obs) {
@@ -972,11 +1063,11 @@ export class GameEngine {
 
     // Hazards vs player
     const hazard = (o: Entity) => {
-      if (!o.active || o.reflected || !HARMFUL.has(o.type) || !overlaps(p, o)) return false;
+      if (!o.active || o.reflected || !HARMFUL.has(o.type) || !hazardGap(p, o).hit) return false;
       if (p.reflectTimer > 0 && REFLECTABLE.has(o.type)) {
         // Broccoli Reflector: send it back down at the giant carrot
         const v = Math.max(300 * this.vScale, Math.hypot(o.vx, o.vy));
-        const tx = this.W / 2 + (this.rng() - 0.5) * this.W * 0.6;
+        const tx = this.W / 2 + (this.fx() - 0.5) * this.W * 0.6;
         const ang = Math.atan2(this.giantCarrot.y + 40 - (o.y + o.height / 2), tx - (o.x + o.width / 2));
         o.vx = Math.cos(ang) * v;
         o.vy = Math.sin(ang) * v;
@@ -1020,10 +1111,8 @@ export class GameEngine {
       const vulnerable = this.vulnerable && p.shieldTimer <= 0;
       const check = (o: Entity) => {
         if (!o.active || o.reflected || !HARMFUL.has(o.type) || o.near === 2) return;
-        const gx = Math.max(o.x - (p.x + p.width), p.x - (o.x + o.width), 0);
-        const gy = Math.max(o.y - (p.y + p.height), p.y - (o.y + o.height), 0);
-        const gap = Math.hypot(gx, gy);
-        if (!o.near && vulnerable && gap > 0 && gap < 10) o.near = 1;
+        const { hit, gap } = hazardGap(p, o);
+        if (!o.near && vulnerable && !hit && gap < 10) o.near = 1;
         else if (o.near === 1 && gap > 28) {
           o.near = 2;
           this.events.sfx("near_miss");
@@ -1075,25 +1164,25 @@ export class GameEngine {
         case "powerup_invincible":
           this.events.sfx("powerup_shield");
           p.shieldTimer = 5.0;
-          this.giantCarrot.face = Math.floor(this.rng() * 6);
+          this.giantCarrot.face = Math.floor(this.fx() * 6);
           break;
         case "powerup_speed":
           this.events.sfx("powerup_speed");
           p.speedBoostTimer = 5.0;
           p.speed = this.baseSpeed * 1.5;
           this.setLoop("rapid_rabbit_loop", true);
-          this.giantCarrot.face = Math.floor(this.rng() * 6);
+          this.giantCarrot.face = Math.floor(this.fx() * 6);
           break;
         case "powerup_blaster":
           this.events.sfx("powerup_speed");
           p.blasterTimer = 10.0;
-          this.giantCarrot.face = Math.floor(this.rng() * 6);
+          this.giantCarrot.face = Math.floor(this.fx() * 6);
           break;
         case "powerup_attract":
           this.events.sfx("powerup_attract");
           p.attractTimer = 6.0;
           this.setLoop("attract_loop", true);
-          this.giantCarrot.face = Math.floor(this.rng() * 6);
+          this.giantCarrot.face = Math.floor(this.fx() * 6);
           break;
         case "powerup_decoy":
           this.events.sfx("powerup_decoy");
@@ -1237,16 +1326,18 @@ export class GameEngine {
     // The final boss cycles through every pattern, so each one fires a little less often
     const pace = b.def.patterns.length > 3 ? 1.3 : 1;
     const W = this.W;
-    const speed = difficulty(this.level).shotSpeed * this.vScale;
+    const speed = difficulty(this.level).shotSpeed * this.vScale * this.ease.speed;
     const cx = W / 2;
     const aim = this.aimPoint();
     const aimFrom = (x: number) => Math.atan2(aim.y - this.giantCarrot.y, aim.x - x);
     switch (pattern) {
       case "fan": {
-        const base = aimFrom(cx);
-        for (let i = -2; i <= 2; i++) this.fireShot("spike", cx, base + i * 0.24, speed * 0.72);
+        // Four spikes with the middle gap aimed at you (give or take a little): hold your nerve
+        // far from the carrot, or step round the outside when close. One fan in the air at a time.
+        const base = aimFrom(cx) + (this.rng() - 0.5) * 0.08;
+        for (const k of [-1.5, -0.5, 0.5, 1.5]) this.fireShot("spike", cx, base + k * FAN_SPREAD, speed * 0.72);
         this.events.sfx("carrot_shoot");
-        b.nextFire = t + 1100 * pace;
+        b.nextFire = t + 1500 * pace;
         break;
       }
       case "spiral": {
@@ -1323,12 +1414,17 @@ export class GameEngine {
     this.stats.bosses.push({ level: this.level, outcome: defeated ? "defeated" : "survived", seconds: (t - b.start) / 1000 });
     const tier = tierIndexForLevel(this.level) + 1;
     const bonus = (defeated ? 1000 : 300) * tier;
+    const scoreFrom = this.score;
+    const final = this.level >= FINAL_LEVEL;
     this.events.sfx(defeated ? "boss_defeat" : "level_up");
-    this.addScore(bonus, this.W / 2, this.H * 0.45, true, defeated ? `${b.def.name} DEFEATED! +${bonus}` : `SURVIVED! +${bonus}`);
+    // The ending has its own celebration; between tiers the tally card shows the bonus instead
+    if (final) this.addScore(bonus, this.W / 2, this.H * 0.45, true, defeated ? `${b.def.name} DEFEATED! +${bonus}` : `SURVIVED! +${bonus}`);
+    else this.score += bonus;
     // Reward for clearing a tier: one extra heart
-    if (this.lives < MAX_HEARTS) {
+    const heart = this.lives < MAX_HEARTS;
+    if (heart) {
       this.lives += 1;
-      this.pushPopup({ x: this.W / 2, y: this.H * 0.53, text: "+1 ❤️", start: this.time, color: "#fb7185", big: true });
+      if (final) this.pushPopup({ x: this.W / 2, y: this.H * 0.53, text: "+1 ❤️", start: this.time, color: "#fb7185", big: true });
       if (this.lives === MAX_HEARTS) this.maxHeartsBlast(t);
     }
     for (const arr of [this.projectiles, this.obstacles]) for (const o of arr) if (HARMFUL.has(o.type)) o.active = false;
@@ -1336,7 +1432,52 @@ export class GameEngine {
     this.flash = 300;
     if (defeated) for (let i = 0; i < 6; i++) this.explosions.push({ x: (this.W * (i + 0.5)) / 6, y: this.giantCarrot.y + 30, start: t + i * 80, dur: 500 });
     this.boss = null;
-    this.levelUp();
+    if (final) {
+      this.levelUp();
+      return;
+    }
+    // Intermission: clear the field (nothing moves until it ends) and show the tally while the carrot retreats
+    this.projectiles = [];
+    this.obstacles = this.obstacles.filter((o) => o.active && !HARMFUL.has(o.type));
+    this.collectibles = [];
+    this.decoy = null;
+    this.wind = null;
+    this.comboChain = 0;
+    this.giantCarrot.face = 0;
+    const next = TIERS[tierIndexForLevel(this.level + 1)];
+    const info: Intermission = {
+      bossName: b.def.name,
+      defeated,
+      seconds: Math.round((t - b.start) / 100) / 10,
+      hits: b.hits,
+      bonus,
+      heart,
+      scoreFrom,
+      scoreTo: this.score,
+      next: { level: this.level + 1, tierName: next.theme.name, newHazards: next.newHazards },
+    };
+    this.intermission = { start: t, info };
+    this.events.intermission?.(info);
+    this.emitHud(true);
+  }
+
+  /** End of the intermission: next level, new scenery, and the carrot rises during Ready / Set / Go. */
+  private nextTier(t: number) {
+    const im = this.intermission!;
+    this.endIntermission();
+    // The tally isn't part of the boss level's time
+    this.stats.levelStart += t - im.start;
+    this.levelUp(true);
+    this.giantCarrot.y = this.H + 180;
+    this.countdownStart = t;
+    this.stats.levelStart = t + COUNTDOWN_MS;
+    this.setPhase("countdown");
+  }
+
+  private endIntermission() {
+    if (!this.intermission) return;
+    this.intermission = null;
+    this.events.intermission?.(null);
   }
 
   private announceCombo(name: string) {
@@ -1416,10 +1557,11 @@ export class GameEngine {
     this.comboChain = 0;
     this.shake = 260;
     this.shakeStrength = 7;
-    this.giantCarrot.face = Math.floor(this.rng() * 6);
+    this.giantCarrot.face = Math.floor(this.fx() * 6);
     this.burst(p.x + p.width / 2, p.y + p.height / 2, 14, ["#ffffff", "#93c5fd", "#fca5a5"], 220);
     const wasMax = this.lives >= MAX_HEARTS;
     this.lives -= 1;
+    if (this.boss) this.boss.hits++;
     if (wasMax) {
       this.sparkleTrail.length = 0;
       this.setGolden(false);
@@ -1443,7 +1585,10 @@ export class GameEngine {
     const W = this.W;
     const vS = this.vScale;
     const fall = this.fallSpeed;
-    const chance = (rate: number) => allowSpawns && rate > 0 && this.rng() < 1 - Math.exp(-rate * rateScale * dt);
+    const chance = (rate: number) => {
+      const roll = this.rng(); // always drawn (see updatePlaying)
+      return allowSpawns && rate > 0 && roll < 1 - Math.exp(-rate * rateScale * dt);
+    };
 
     // Brussels sprouts burst into three small sprouts shortly after leaving the carrot
     for (const o of this.projectiles) {
@@ -1481,10 +1626,10 @@ export class GameEngine {
     }
 
     // Column hazards: a warning stripe first, then an icicle drops / lightning strikes
-    if (chance(hazardRate(this.level, (r) => r.icicleRate))) {
+    if (chance(hazardRate(this.level, (r) => r.icicleRate) * this.ease.rate)) {
       this.strikes.push({ kind: "icicle", x: 20 + this.rng() * (W - 40), w: 26, warnUntil: t + 900, endAt: t + 900 });
     }
-    if (chance(hazardRate(this.level, (r) => r.lightningRate))) {
+    if (chance(hazardRate(this.level, (r) => r.lightningRate) * this.ease.rate)) {
       this.strikes.push({ kind: "lightning", x: 30 + this.rng() * (W - 60), w: 38, warnUntil: t + 1000, endAt: t + 1250 });
     }
     let j = 0;
@@ -1506,7 +1651,7 @@ export class GameEngine {
 
     // Meteor radishes streak in diagonally from a top corner (entering off-screen first, so the
     // edge warning marker shows before they arrive)
-    if (chance(hazardRate(this.level, (r) => r.meteorRate))) {
+    if (chance(hazardRate(this.level, (r) => r.meteorRate) * this.ease.rate)) {
       const fromLeft = this.rng() < 0.5;
       const ang = Math.PI / 2 + (fromLeft ? -1 : 1) * (0.45 + this.rng() * 0.25);
       const v = 520 * vS;
@@ -1514,7 +1659,7 @@ export class GameEngine {
       const lead = 0.5; // seconds above the screen
       this.obstacles.push({ x: x - 15 - Math.cos(ang) * v * lead, y: -30 - Math.sin(ang) * v * lead, width: 30, height: 30, type: "meteor", vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, active: true, angle: ang });
     }
-    if (chance(hazardRate(this.level, (r) => r.beetRate))) {
+    if (chance(hazardRate(this.level, (r) => r.beetRate) * this.ease.rate)) {
       this.obstacles.push({ x: 20 + this.rng() * (W - 60), y: -40 - fall * BALL_TELEGRAPH_S, width: 30, height: 30, type: "beet", vx: 0, vy: fall, active: true, born: t });
     }
 
@@ -1572,10 +1717,10 @@ export class GameEngine {
   }
 
   /** Spawn a collectible at the top; announces items the device hasn't seen before. */
-  private spawnCollectible(type: CollectibleType) {
+  private spawnCollectible(type: CollectibleType, xRoll = this.rng(), faceRoll = this.rng()) {
     const size = type === "carrot" ? 40 : 30;
     this.collectibles.push({
-      x: this.rng() * (this.W - (type === "carrot" ? 50 : 40)),
+      x: xRoll * (this.W - (type === "carrot" ? 50 : 40)),
       y: -50,
       width: size,
       height: size,
@@ -1583,7 +1728,7 @@ export class GameEngine {
       vx: 0,
       vy: this.fallSpeed,
       active: true,
-      ...(type !== "carrot_rotten" && type.startsWith("carrot") && { face: Math.floor(this.rng() * 6) }),
+      ...(type !== "carrot_rotten" && type.startsWith("carrot") && { face: Math.floor(faceRoll * 6) }),
       ...(type === "carrot_rotten" && { face: 1 }),
     });
     const item = introForEntity(type);
@@ -1600,7 +1745,8 @@ export class GameEngine {
     this.burst(x, y, 12, ["#fb923c", "#f97316", "#fde68a", "#6b7280"], 260);
   }
 
-  private levelUp() {
+  /** `afterBreak`: coming out of a boss intermission (Ready / Set / Go follows, no confetti). */
+  private levelUp(afterBreak = false) {
     this.stats.levelTimes.push((this.time - this.stats.levelStart) / 1000);
     this.stats.levelStart = this.time;
     if (this.level >= FINAL_LEVEL) {
@@ -1611,17 +1757,22 @@ export class GameEngine {
       this.setPhase("ending");
       return;
     }
-    this.events.sfx("level_up");
     this.level += 1;
     this.carrots = 0;
+    if (afterBreak) {
+      this.beginLevel(this.time + COUNTDOWN_MS);
+      this.emitHud(true);
+      return;
+    }
+    this.events.sfx("level_up");
     this.beginLevel(this.time);
-    this.giantCarrot.face = Math.floor(this.rng() * 6);
+    this.giantCarrot.face = Math.floor(this.fx() * 6);
     // In-canvas celebration (replaces the full-page DOM confetti)
     const colors = ["#f97316", "#22c55e", "#3b82f6", "#eab308", "#ec4899", "#ffffff"];
     for (let i = 0; i < 70; i++) {
-      const a = -Math.PI / 2 + (this.rng() - 0.5) * 1.6;
-      const sp = 300 + this.rng() * 450;
-      this.particles.push({ x: this.W / 2 + (this.rng() - 0.5) * 80, y: this.H * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 1.2 + this.rng() * 0.6, size: 3 + this.rng() * 3, color: colors[i % colors.length], gravity: 700 });
+      const a = -Math.PI / 2 + (this.fx() - 0.5) * 1.6;
+      const sp = 300 + this.fx() * 450;
+      this.particles.push({ x: this.W / 2 + (this.fx() - 0.5) * 80, y: this.H * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 1.2 + this.fx() * 0.6, size: 3 + this.fx() * 3, color: colors[i % colors.length], gravity: 700 });
     }
     this.pushPopup({ x: this.W / 2, y: this.H * 0.35, text: `LEVEL ${this.level}!`, start: this.time, color: "#f97316", big: true });
   }
@@ -1646,9 +1797,9 @@ export class GameEngine {
 
   private burst(x: number, y: number, n: number, colors: string[], speed: number) {
     for (let i = 0; i < n; i++) {
-      const a = this.rng() * Math.PI * 2;
-      const sp = speed * (0.35 + this.rng() * 0.65);
-      this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.35 + this.rng() * 0.35, size: 2 + this.rng() * 2.5, color: colors[i % colors.length], gravity: 0 });
+      const a = this.fx() * Math.PI * 2;
+      const sp = speed * (0.35 + this.fx() * 0.65);
+      this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.35 + this.fx() * 0.35, size: 2 + this.fx() * 2.5, color: colors[i % colors.length], gravity: 0 });
     }
     if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
   }

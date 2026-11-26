@@ -15,9 +15,11 @@ export default function HighScoreList({ onTitleClick }: HighScoreListProps) {
   const [refreshing, setRefreshing] = useState(false);
   const isMobile = useIsMobile();
 
-  const { dailyTop3, overallTop3, mobileTop3, mobileTop20, classicTop3, hasDaily, hasOverall } = useMemo(() => {
+  const { challengeTop3, hasChallenge, dailyTop3, overallTop3, mobileTop3, mobileTop20, classicTop3, hasDaily, hasOverall } = useMemo(() => {
     const b = splitLeaderboard(scores as ScoreRowFull[] | undefined);
     return {
+      challengeTop3: b.challenge.slice(0, 3),
+      hasChallenge: b.challenge.length > 0,
       dailyTop3: b.daily.slice(0, 3),
       overallTop3: b.overall.slice(0, 3),
       mobileTop3: b.mobile.slice(0, 3),
@@ -77,21 +79,38 @@ export default function HighScoreList({ onTitleClick }: HighScoreListProps) {
         </button>
       </div>
 
-      <Tabs defaultValue={hasDaily ? "daily" : hasOverall ? "overall" : "mobile"} className="w-full">
-        <TabsList className="w-full grid grid-cols-4 h-10 rounded-xl bg-gray-100 p-1">
-          <TabsTrigger value="daily" className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
-            Daily
+      <Tabs defaultValue={hasChallenge ? "challenge" : hasDaily ? "daily" : hasOverall ? "overall" : "mobile"} className="w-full">
+        <TabsList className="w-full grid grid-cols-5 h-10 rounded-xl bg-gray-100 p-1">
+          <TabsTrigger value="challenge" className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm" title="Today's daily challenge: the same levels for everyone">
+            🎯
           </TabsTrigger>
-          <TabsTrigger value="overall" className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          <TabsTrigger value="daily" className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            Today
+          </TabsTrigger>
+          <TabsTrigger value="overall" className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
             Overall
           </TabsTrigger>
-          <TabsTrigger value="mobile" className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          <TabsTrigger value="mobile" className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
             Mobile
           </TabsTrigger>
-          <TabsTrigger value="classic" className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm" title="The original 20-level game">
+          <TabsTrigger value="classic" className="rounded-lg px-1 font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm" title="The original 20-level game">
             Classic
           </TabsTrigger>
         </TabsList>
+        <TabsContent value="challenge" className="mt-4">
+          <p className="mb-2 text-center text-xs font-bold text-gray-400">Daily challenge: same levels for everyone, new each day (UTC)</p>
+          <HighScoreListContent scores={challengeTop3} showPlaceholders={true} />
+          {onTitleClick && (
+            <button
+              type="button"
+              onClick={onTitleClick}
+              className="w-full flex justify-center pt-3 mt-1 text-gray-400 hover:text-gray-600 active:text-gray-700 transition-colors"
+              aria-label="View more challenge scores"
+            >
+              <ChevronDown className="w-5 h-5" />
+            </button>
+          )}
+        </TabsContent>
         <TabsContent value="daily" className="mt-4">
           <HighScoreListContent scores={dailyTop3} showPlaceholders={true} />
           {onTitleClick && (

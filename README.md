@@ -12,7 +12,8 @@ Created by Nya.
 - Full-screen mobile play in portrait or landscape: drag anywhere to fly, blasters auto-fire
 - Installable as a home-screen web app (true full screen on iPhone)
 - Sound effects and in-game music (one Web Audio mixer, so volume/mute work on iOS too)
-- Leaderboard with seasons: the current season's Daily / Overall / Mobile boards, and the original 20-level game's scores kept under "Classic"
+- Daily challenge: one seed per UTC day, so everyone plays the same levels, with its own 🎯 leaderboard tab
+- Leaderboard with seasons: the current season's Today / Overall / Mobile boards, and the original 20-level game's scores kept under "Classic"
 - Admin tools for score management and ending demos
 
 ## Tech stack
@@ -53,11 +54,13 @@ Optional environment variables:
 | `ADMIN_PASSWORD` | Initial admin password (first run) | `password` |
 | `VITE_BASE_URL` | Public base path for assets/routes | `/` in dev, `/carrotroll/` in production |
 
-### Database note (seasons)
+### Database note (seasons and daily challenge)
 
-Scores now carry a `season` (1 = Classic). With Postgres, run `npm run db:push` once after
-deploying this version to add the column; existing rows become Classic. File storage
-(`data/scores.json`) needs nothing: scores without a season are read as Classic.
+Scores carry a `season` (1 = Classic) and a nullable `challenge` day (`YYYY-MM-DD`, UTC) for
+daily challenge runs. With Postgres, run `npm run db:push` once after deploying to add any
+missing column; existing rows become Classic, normal runs. File storage (`data/scores.json`)
+needs nothing. The server accepts challenge scores only for today or yesterday (UTC), so a run
+started just before midnight still counts; challenge scores stay off the normal boards.
 
 ### Web preview (GitHub Pages)
 
@@ -79,7 +82,9 @@ deploying this version to add the column; existing rows become Classic. File sto
 | Touch: drag anywhere | Move (the bunny follows your finger; blasters fire automatically) |
 | Touch: menu → Classic touchpad | Optional on-screen touchpad + fire buttons |
 
-Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls and each tier's new hazards. Every fifth level is a boss: no carrots, so drain its health (blasters fire down at it, reflected broccoli hurts it) or survive 30 seconds. Beat the Carrot King on level 25 to see the ending.
+Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls and each tier's new hazards. Every fifth level is a boss: no carrots, so drain its health (blasters fire down at it, reflected broccoli hurts it) or survive 30 seconds. After each boss the giant carrot retreats while your bonus is tallied, then the next tier begins. Beat the Carrot King on level 25 to see the ending.
+
+Desktop plays with the keyboard and touch screens with a finger drag. A drag steers faster and more precisely, so hazard rates and speeds are tuned per control scheme (`CONTROL_TUNING` in `engine.ts`) to make both land in about the same place; the classic touchpad counts as keyboard.
 
 ## Scripts
 
@@ -90,6 +95,8 @@ Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls an
 | `npm start` | Run production build |
 | `npm run check` | Typecheck with `tsc` |
 | `npm run sim` | Balance simulator: plays hundreds of seeded games with bots (`-- --runs 200 --world mobile --compare script/sim-baseline.json`) |
+| `npx tsx script/boss-test.ts` | Boss dodge test: one boss fight, no power-ups, hits per attack pattern (`--level 5 --input keys` for desktop keyboard movement) |
+| `npm run check:daily` | Checks that a daily challenge seed gives the same levels whatever the player does |
 | `npm run generate-sounds` | Fill in any missing sounds with placeholders (never overwrites real ones) |
 | `npm run optimize-assets` | Re-encode masters in `assets-src/` into web assets (needs `ffmpeg`) |
 | `npm run db:push` | Push Drizzle schema |
@@ -97,7 +104,7 @@ Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls an
 ## Project layout
 
 - `client/src/game/` – the game itself: `engine.ts` (fixed-timestep, seeded simulation), `content.ts` (items, unlock levels, spawn weights), `tiers.ts` (themes, hazard rates, bosses), `render.ts` (canvas drawing), `art.ts` (sprites, cached at screen resolution), `input.ts` (drag controls)
-- `script/sim.ts` – balance simulator; `script/sim-baseline*.json` (the original 20-level game) and `script/sim-results*.json` (current tuning)
+- `script/sim.ts` – balance simulator (keyboard bots on desktop, drag bots on mobile); `script/bot.ts` – its bots, shared with `script/boss-test.ts`; `script/sim-baseline*.json` (the original 20-level game, drag bots) and `script/sim-results*.json` (current tuning)
 - `client/src/components/GameCanvas.tsx` – React host: sizing, input wiring, HUD and overlays
 - `client/src/contexts/SoundContext.tsx` – audio engine
 - `assets-src/` – full-quality master audio/images (not deployed); see its README
