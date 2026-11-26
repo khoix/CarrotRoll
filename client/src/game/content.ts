@@ -8,7 +8,7 @@ import { TIERS, LEVELS_PER_TIER, lerpRange, tierForLevel, tierProgress } from ".
 export { LEVELS_PER_TIER, TIERS };
 
 /** Completing this level's carrots (or its boss) triggers the ending. */
-export const FINAL_LEVEL = 20;
+export const FINAL_LEVEL = 25;
 
 export type CollectibleType =
   | "carrot"

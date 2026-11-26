@@ -122,7 +122,8 @@ function think(e: GameEngine, bot: BotConfig, rng: () => number) {
   e.dragTarget = { x: best.x, y: best.y };
 }
 
-type RunResult = { seed: number; level: number; ending: boolean; seconds: number; deathCause: string | null; levelTimes: number[] };
+type BossResult = { level: number; outcome: "defeated" | "survived" | "died"; seconds: number };
+type RunResult = { seed: number; level: number; ending: boolean; seconds: number; deathCause: string | null; levelTimes: number[]; bosses: BossResult[] };
 
 function runOne(bot: BotConfig, seed: number, world: { w: number; h: number }): RunResult {
   const noop = () => {};
@@ -147,6 +148,7 @@ function runOne(bot: BotConfig, seed: number, world: { w: number; h: number }): 
     seconds: Math.round((e.time - t0) / 100) / 10,
     deathCause: e.phase === "over" ? e.stats.deathCause : null,
     levelTimes: e.stats.levelTimes,
+    bosses: e.stats.bosses,
   };
 }
 
@@ -171,6 +173,8 @@ type Summary = {
   secondsPerLevel: Record<string, number>;
   deaths: Record<string, number>;
   medianRunMinutes: number;
+  /** Per boss level: share of fights won by draining it / survived / lost, and mean fight length. */
+  bosses?: Record<string, { fights: number; defeated: number; survived: number; died: number; meanSeconds: number }>;
 };
 
 function summarize(bot: string, results: RunResult[]): Summary {
@@ -200,6 +204,25 @@ function summarize(bot: string, results: RunResult[]): Summary {
     secondsPerLevel,
     deaths,
     medianRunMinutes: Math.round(quantile(results.map((r) => r.seconds), 0.5) / 6) / 10,
+    bosses: (() => {
+      const out: NonNullable<Summary["bosses"]> = {};
+      for (const r of results) {
+        for (const b of r.bosses) {
+          const k = `L${b.level}`;
+          const o = (out[k] ??= { fights: 0, defeated: 0, survived: 0, died: 0, meanSeconds: 0 });
+          o.fights++;
+          o[b.outcome]++;
+          o.meanSeconds += b.seconds;
+        }
+      }
+      for (const o of Object.values(out)) {
+        o.meanSeconds = Math.round(o.meanSeconds / o.fights);
+        o.defeated = Math.round((100 * o.defeated) / o.fights);
+        o.survived = Math.round((100 * o.survived) / o.fights);
+        o.died = Math.round((100 * o.died) / o.fights);
+      }
+      return out;
+    })(),
   };
 }
 
@@ -227,6 +250,8 @@ function main() {
     console.log(`  reached: ${Object.entries(s.reachRate).map(([k, v]) => `${k} ${v}%`).join(" · ")}`);
     console.log(`  seconds per level: ${Object.entries(s.secondsPerLevel).map(([k, v]) => `${k} ${v}s`).join(" · ")}`);
     console.log(`  deaths: ${Object.entries(s.deaths).map(([k, v]) => `${k} ${v}%`).join(" · ") || "none"}`);
+    if (s.bosses && Object.keys(s.bosses).length)
+      console.log(`  bosses: ${Object.entries(s.bosses).map(([k, b]) => `${k} ${b.fights} fights: won ${b.defeated}% / survived ${b.survived}% / lost ${b.died}% (${b.meanSeconds}s)`).join(" · ")}`);
   }
   const out = { world: worldName, runs, seed0, date: new Date().toISOString().slice(0, 10), summaries };
   const save = arg("save");

@@ -62,25 +62,25 @@ export const TIERS: TierDef[] = [
     n: 2,
     theme: { key: "autumn", name: "Autumn Orchard", tile: "images/tiers/autumn.webp", haze: { color: "255,226,190", far: 0.3, near: 0.08 }, shimmer: "rgba(255,240,220,0.6)", vignette: 0.32, particles: "leaves" },
     newHazards: ["Chestnut burrs", "Brussels sprouts"],
-    rates: { ball: r(0.04, 0.058), shotSpeed: r(420, 500), shotInterval: r(1.4, 1.0), burrShare: r(0.25, 0.5), sproutChance: r(0.2, 0.4) },
+    rates: { ball: r(0.036, 0.05), shotSpeed: r(400, 460), shotInterval: r(1.55, 1.2), burrShare: r(0.25, 0.45), sproutChance: r(0.15, 0.3) },
   },
   {
     n: 3,
     theme: { key: "frost", name: "Frost Valley", tile: "images/tiers/frost.webp", haze: { color: "235,245,255", far: 0.34, near: 0.1 }, shimmer: "rgba(255,255,255,0.75)", vignette: 0.3, particles: "snow" },
     newHazards: ["Icicles", "Snow gusts"],
-    rates: { ball: r(0.06, 0.078), shotSpeed: r(520, 600), shotInterval: r(0.9, 0.62), burrShare: r(0.4, 0.4), sproutChance: r(0.3, 0.3), icicleRate: r(0.15, 0.35), gustEvery: r(12, 7) },
+    rates: { ball: r(0.052, 0.066), shotSpeed: r(460, 520), shotInterval: r(1.15, 0.9), burrShare: r(0.4, 0.4), sproutChance: r(0.22, 0.22), icicleRate: r(0.15, 0.35), gustEvery: r(12, 7) },
   },
   {
     n: 4,
     theme: { key: "storm", name: "Stormy Skies", tile: "images/tiers/storm.webp", haze: { color: "40,48,68", far: 0.3, near: 0.12 }, shimmer: "rgba(200,215,235,0.45)", vignette: 0.45, particles: "rain" },
     newHazards: ["Lightning strikes", "Cauliflower cannonballs"],
-    rates: { ball: r(0.08, 0.098), shotSpeed: r(620, 680), shotInterval: r(0.55, 0.5), burrShare: r(0.4, 0.4), sproutChance: r(0.25, 0.25), icicleRate: r(0.15, 0.2), lightningRate: r(0.12, 0.28), cauliChance: r(0.15, 0.3) },
+    rates: { ball: r(0.058, 0.07), shotSpeed: r(520, 570), shotInterval: r(0.9, 0.78), burrShare: r(0.4, 0.4), sproutChance: r(0.18, 0.18), icicleRate: r(0.15, 0.2), lightningRate: r(0.1, 0.22), cauliChance: r(0.1, 0.2) },
   },
   {
     n: 5,
     theme: { key: "night", name: "Starlight Night", tile: "images/tiers/night.webp", haze: { color: "16,22,52", far: 0.34, near: 0.16 }, shimmer: "rgba(180,200,255,0.4)", vignette: 0.55, particles: "stars" },
     newHazards: ["Meteor radishes", "Homing beets"],
-    rates: { ball: r(0.095, 0.11), shotSpeed: r(680, 720), shotInterval: r(0.5, 0.45), burrShare: r(0.4, 0.4), sproutChance: r(0.25, 0.25), icicleRate: r(0.12, 0.15), lightningRate: r(0.12, 0.18), cauliChance: r(0.2, 0.25), meteorRate: r(0.12, 0.3), beetRate: r(0.05, 0.13) },
+    rates: { ball: r(0.064, 0.075), shotSpeed: r(560, 610), shotInterval: r(0.8, 0.7), burrShare: r(0.4, 0.4), sproutChance: r(0.18, 0.18), icicleRate: r(0.12, 0.15), lightningRate: r(0.12, 0.18), cauliChance: r(0.15, 0.2), meteorRate: r(0.1, 0.22), beetRate: r(0.04, 0.1) },
   },
 ];
 
@@ -133,10 +133,10 @@ export interface BossDef {
 /** One boss per tier, in tier order. */
 export const BOSSES: BossDef[] = [
   { name: "Broccoli Barrage", hp: 40, patterns: ["fan", "spiral"] },
-  { name: "Sprout Storm", hp: 55, patterns: ["wall", "sprouts"] },
-  { name: "Blizzard", hp: 70, patterns: ["icicle_sweep", "aimed"] },
-  { name: "Thunderhead", hp: 85, patterns: ["lightning_rows", "cauli_volley"] },
-  { name: "The Carrot King", hp: 120, patterns: ["fan", "wall", "icicle_sweep", "lightning_rows", "cauli_volley", "meteor_shower", "spiral"] },
+  { name: "Sprout Storm", hp: 50, patterns: ["wall", "sprouts"] },
+  { name: "Blizzard", hp: 60, patterns: ["icicle_sweep", "aimed"] },
+  { name: "Thunderhead", hp: 70, patterns: ["lightning_rows", "cauli_volley"] },
+  { name: "The Carrot King", hp: 100, patterns: ["fan", "wall", "icicle_sweep", "lightning_rows", "cauli_volley", "meteor_shower", "spiral"] },
 ];
 
 /** Seconds a boss fight lasts if you just survive it. */

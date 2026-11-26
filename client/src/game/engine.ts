@@ -155,7 +155,14 @@ export interface EngineEvents {
 export type Threat = { x: number; y: number; vx: number; vy: number; r: number };
 
 /** Run statistics for the balance simulator. */
-export type RunStats = { levelStart: number; levelTimes: number[]; deathCause: string | null; pickups: Record<string, number> };
+export type RunStats = {
+  levelStart: number;
+  levelTimes: number[];
+  deathCause: string | null;
+  pickups: Record<string, number>;
+  /** One entry per boss reached: how it ended (or "died") and how long it took (s). */
+  bosses: { level: number; outcome: "defeated" | "survived" | "died"; seconds: number }[];
+};
 
 type Keys = { w: boolean; a: boolean; s: boolean; d: boolean; ArrowUp: boolean; ArrowLeft: boolean; ArrowDown: boolean; ArrowRight: boolean; space: boolean };
 
@@ -213,7 +220,7 @@ export class GameEngine {
   seed = 0;
   /** Item ids already seen on this device (the host loads and saves it). */
   seenItems = new Set<string>();
-  stats: RunStats = { levelStart: 0, levelTimes: [], deathCause: null, pickups: {} };
+  stats: RunStats = { levelStart: 0, levelTimes: [], deathCause: null, pickups: {}, bosses: [] };
   /** Items unlocking on this level, waiting for their guaranteed first spawn. */
   private pendingUnlocks: CollectibleType[] = [];
   strikes: Strike[] = [];
@@ -363,7 +370,7 @@ export class GameEngine {
     this.paused = false;
     this.acc = 0;
     this.countdownStart = this.time;
-    this.stats = { levelStart: this.time + COUNTDOWN_MS, levelTimes: [], deathCause: null, pickups: {} };
+    this.stats = { levelStart: this.time + COUNTDOWN_MS, levelTimes: [], deathCause: null, pickups: {}, bosses: [] };
     this.beginLevel(this.time + COUNTDOWN_MS);
     this.setPhase("countdown");
     this.emitHud(true);
@@ -954,7 +961,7 @@ export class GameEngine {
         if (proj.y + proj.height < this.giantCarrot.y + 12) continue;
         proj.active = false;
         this.burst(proj.x, this.giantCarrot.y + 12, 3, ["#fde68a", "#fb923c"], 90);
-        this.damageBoss(1, t);
+        this.damageBoss(0.5, t);
       }
     }
 
@@ -1227,6 +1234,8 @@ export class GameEngine {
     }
     if (t < b.nextFire) return;
     const pattern: BossPattern = b.def.patterns[b.patIdx];
+    // The final boss cycles through every pattern, so each one fires a little less often
+    const pace = b.def.patterns.length > 3 ? 1.3 : 1;
     const W = this.W;
     const speed = difficulty(this.level).shotSpeed * this.vScale;
     const cx = W / 2;
@@ -1235,36 +1244,36 @@ export class GameEngine {
     switch (pattern) {
       case "fan": {
         const base = aimFrom(cx);
-        for (let i = -3; i <= 3; i++) this.fireShot("spike", cx, base + i * 0.2, speed * 0.75);
+        for (let i = -2; i <= 2; i++) this.fireShot("spike", cx, base + i * 0.24, speed * 0.72);
         this.events.sfx("carrot_shoot");
-        b.nextFire = t + 900;
+        b.nextFire = t + 1100 * pace;
         break;
       }
       case "spiral": {
         const a = -Math.PI / 2 + Math.sin(b.phase) * 1.15;
         this.fireShot("spike", cx, a, speed * 0.7);
-        b.phase += 0.33;
-        b.nextFire = t + 95;
+        b.phase += 0.3;
+        b.nextFire = t + 135 * pace;
         break;
       }
       case "wall": {
-        const gapW = 130;
+        const gapW = 165;
         const gapX = 40 + this.rng() * (W - 80 - gapW);
         for (let x = 12; x < W; x += 34) if (x < gapX || x > gapX + gapW) this.fireShot("sprout_small", x, -Math.PI / 2, speed * 0.5);
         this.events.sfx("carrot_shoot");
-        b.nextFire = t + 1300;
+        b.nextFire = t + 1400 * pace;
         break;
       }
       case "sprouts": {
         const x = 60 + this.rng() * (W - 120);
-        this.fireShot("sprout", x, aimFrom(x), speed * 0.85);
-        b.nextFire = t + 450;
+        this.fireShot("sprout", x, aimFrom(x), speed * 0.8);
+        b.nextFire = t + 560 * pace;
         break;
       }
       case "aimed": {
         const x = 40 + this.rng() * (W - 80);
-        this.fireShot("spike", x, aimFrom(x), speed);
-        b.nextFire = t + 420;
+        this.fireShot("spike", x, aimFrom(x), speed * 0.9);
+        b.nextFire = t + 520 * pace;
         break;
       }
       case "icicle_sweep": {
@@ -1278,7 +1287,7 @@ export class GameEngine {
           this.strikes.push({ kind: "icicle", x: dir * step + step / 2, w: 26, warnUntil: t + 700 + i * 110, endAt: t + 700 + i * 110 });
         }
         b.phase++;
-        b.nextFire = t + 2200;
+        b.nextFire = t + 2200 * pace;
         break;
       }
       case "lightning_rows": {
@@ -1289,19 +1298,19 @@ export class GameEngine {
           this.strikes.push({ kind: "lightning", x, w: 44, warnUntil: t + 900, endAt: t + 1150 });
         }
         b.phase++;
-        b.nextFire = t + 1400;
+        b.nextFire = t + 1500 * pace;
         break;
       }
       case "cauli_volley": {
         const base = aimFrom(cx);
-        for (const d of [-0.3, 0, 0.3]) this.fireShot("cauliflower", cx, base + d, speed * 0.55);
+        for (const d of [-0.35, 0, 0.35]) this.fireShot("cauliflower", cx, base + d, speed * 0.5);
         this.events.sfx("carrot_shoot");
-        b.nextFire = t + 1300;
+        b.nextFire = t + 1500 * pace;
         break;
       }
       case "meteor_shower": {
         this.spawnMeteor();
-        b.nextFire = t + 320;
+        b.nextFire = t + 420 * pace;
         break;
       }
     }
@@ -1311,10 +1320,17 @@ export class GameEngine {
   private finishBoss(defeated: boolean, t: number) {
     const b = this.boss!;
     b.done = true;
+    this.stats.bosses.push({ level: this.level, outcome: defeated ? "defeated" : "survived", seconds: (t - b.start) / 1000 });
     const tier = tierIndexForLevel(this.level) + 1;
     const bonus = (defeated ? 1000 : 300) * tier;
     this.events.sfx(defeated ? "boss_defeat" : "level_up");
     this.addScore(bonus, this.W / 2, this.H * 0.45, true, defeated ? `${b.def.name} DEFEATED! +${bonus}` : `SURVIVED! +${bonus}`);
+    // Reward for clearing a tier: one extra heart
+    if (this.lives < MAX_HEARTS) {
+      this.lives += 1;
+      this.pushPopup({ x: this.W / 2, y: this.H * 0.53, text: "+1 ❤️", start: this.time, color: "#fb7185", big: true });
+      if (this.lives === MAX_HEARTS) this.maxHeartsBlast(t);
+    }
     for (const arr of [this.projectiles, this.obstacles]) for (const o of arr) if (HARMFUL.has(o.type)) o.active = false;
     this.strikes = [];
     this.flash = 300;
@@ -1437,7 +1453,7 @@ export class GameEngine {
       const cy = o.y + o.height / 2;
       const base = Math.atan2(o.vy, o.vx);
       const v = Math.hypot(o.vx, o.vy);
-      for (const da of [-0.4, 0, 0.4]) {
+      for (const da of [-0.32, 0, 0.32]) {
         this.projectiles.push({ x: cx - 8, y: cy - 8, width: 16, height: 16, type: "sprout_small", vx: Math.cos(base + da) * v, vy: Math.sin(base + da) * v, active: true, angle: 0 });
       }
       this.burst(cx, cy, 6, ["#4ade80", "#16a34a"], 120);
@@ -1611,6 +1627,7 @@ export class GameEngine {
   }
 
   private gameOver() {
+    if (this.boss && !this.boss.done) this.stats.bosses.push({ level: this.level, outcome: "died", seconds: (this.time - this.boss.start) / 1000 });
     this.events.sfx("death");
     this.stopAllLoops();
     this.setPhase("over");
