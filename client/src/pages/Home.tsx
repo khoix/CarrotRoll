@@ -7,6 +7,7 @@ import TouchControls from "@/components/TouchControls";
 import StartMenuCard from "@/components/StartMenuCard";
 import HighScoreList, { HighScoreListContent } from "@/components/HighScoreList";
 import PowerUpList from "@/components/PowerUpList";
+import { splitLeaderboard, type ScoreRow } from "@/lib/leaderboard";
 import { useScores } from "@/hooks/use-scores";
 import { useSound } from "@/contexts/SoundContext";
 import { Button } from "@/components/ui/button";
@@ -66,28 +67,10 @@ export default function Home() {
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const isMobile = useIsMobile();
   const { data: scores, refetch: refetchScores, isFetching: scoresFetching } = useScores();
-  const { dailyTop20, overallTop20, mobileTop20 } = useMemo(() => {
-    const list = scores ?? [];
-    const sorted = [...list].sort((a, b) => b.score - a.score);
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const daily = list
-      .filter((s) => {
-        const createdAt = (s as { createdAt?: Date | string }).createdAt;
-        if (!createdAt) return false;
-        const d = typeof createdAt === "string" ? new Date(createdAt) : createdAt;
-        return d >= todayStart;
-      })
-      .sort((a, b) => b.score - a.score);
-    const mobile = list
-      .filter((s) => (s as { device?: string }).device === "mobile")
-      .sort((a, b) => b.score - a.score);
-    return {
-      dailyTop20: daily.slice(0, 20),
-      overallTop20: sorted.slice(0, 20),
-      mobileTop20: mobile.slice(0, 20),
-    };
-  }, [scores]);
+  const { daily: dailyTop20, overall: overallTop20, mobile: mobileTop20, classic: classicTop20 } = useMemo(
+    () => splitLeaderboard(scores as ScoreRow[] | undefined),
+    [scores]
+  );
   const [showLeaderboardOverlay, setShowLeaderboardOverlay] = useState(false);
   const gameCanvasRef = useRef<GameCanvasHandle>(null);
   const sidebarContainerRef = useRef<HTMLDivElement>(null);
@@ -685,7 +668,7 @@ export default function Home() {
                   className="flex flex-col flex-1 min-h-0"
                 >
                   <TabsList 
-                    className="w-full grid grid-cols-3 h-10 rounded-xl bg-gray-100 p-1 flex-shrink-0"
+                    className="w-full grid grid-cols-4 h-10 rounded-xl bg-gray-100 p-1 flex-shrink-0"
                     onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
                     onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
                   >
@@ -713,6 +696,14 @@ export default function Home() {
                     >
                       Mobile
                     </TabsTrigger>
+                    <TabsTrigger 
+                      value="classic" 
+                      className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                      onClick={(e: React.MouseEvent<HTMLButtonElement>) => e.stopPropagation()}
+                      onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) => e.stopPropagation()}
+                    >
+                      Classic
+                    </TabsTrigger>
                   </TabsList>
                   <TabsContent 
                     value="daily" 
@@ -737,6 +728,15 @@ export default function Home() {
                     onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
                   >
                     <HighScoreListContent scores={mobileTop20} />
+                  </TabsContent>
+                  <TabsContent 
+                    value="classic" 
+                    className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mx-1 px-1 overscroll-contain mt-4 [&_.space-y-3>div]:min-h-[44px] data-[state=inactive]:hidden"
+                    onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+                    onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
+                  >
+                    <p className="mb-2 text-center text-xs font-bold text-gray-400">Scores from the original 20-level game</p>
+                    <HighScoreListContent scores={classicTop20} />
                   </TabsContent>
                 </Tabs>
                 </div>

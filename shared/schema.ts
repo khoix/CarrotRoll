@@ -12,7 +12,12 @@ export const highScores = pgTable("high_scores", {
   level: integer("level").notNull(),
   device: text("device").$type<DeviceType>().default("unknown").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  /** Leaderboard season. 1 = "Classic" (the 20-level game); new scores get CURRENT_SEASON. */
+  season: integer("season").default(1).notNull(),
 });
+
+/** Scores submitted now belong to this season; older seasons stay viewable. */
+export const CURRENT_SEASON = 2;
 
 const NAME_MAX_LENGTH = 10;
 /** Allow letters (any script), numbers, spaces, and safe punctuation: ' - . */
@@ -41,6 +46,7 @@ const baseInsertSchema = createInsertSchema(highScores).omit({
   id: true,
   createdAt: true,
   device: true,
+  season: true, // set by the server, never by the client
 });
 
 export const insertHighScoreSchema = baseInsertSchema.extend({

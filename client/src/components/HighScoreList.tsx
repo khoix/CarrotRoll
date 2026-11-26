@@ -4,44 +4,27 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Loader2, Trophy, RefreshCw, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { splitLeaderboard, type ScoreRow as ScoreRowFull } from "@/lib/leaderboard";
 
-type ScoreRow = { id: string | number; name: string; score: number; level: number; createdAt?: Date | string; device?: string };
 
 type HighScoreListProps = { onTitleClick?: () => void };
 
-function isToday(d: Date | string | undefined): boolean {
-  if (!d) return false;
-  const date = typeof d === "string" ? new Date(d) : d;
-  const today = new Date();
-  return date.getDate() === today.getDate() &&
-    date.getMonth() === today.getMonth() &&
-    date.getFullYear() === today.getFullYear();
-}
 
 export default function HighScoreList({ onTitleClick }: HighScoreListProps) {
   const { data: scores, isLoading, refetch } = useScores();
   const [refreshing, setRefreshing] = useState(false);
   const isMobile = useIsMobile();
 
-  const { dailyTop3, dailyTop20, overallTop3, overallTop20, mobileTop3, mobileTop20, hasDaily, hasOverall, hasMobile } = useMemo(() => {
-    const list = scores ?? [];
-    const sorted = [...list].sort((a, b) => b.score - a.score);
-    const daily = list
-      .filter((s) => isToday((s as ScoreRow).createdAt))
-      .sort((a, b) => b.score - a.score);
-    const mobile = list
-      .filter((s) => (s as ScoreRow).device === "mobile")
-      .sort((a, b) => b.score - a.score);
+  const { dailyTop3, overallTop3, mobileTop3, mobileTop20, classicTop3, hasDaily, hasOverall } = useMemo(() => {
+    const b = splitLeaderboard(scores as ScoreRowFull[] | undefined);
     return {
-      dailyTop3: daily.slice(0, 3),
-      dailyTop20: daily.slice(0, 20),
-      overallTop3: sorted.slice(0, 3),
-      overallTop20: sorted.slice(0, 20),
-      mobileTop3: mobile.slice(0, 3),
-      mobileTop20: mobile.slice(0, 20),
-      hasDaily: daily.length > 0,
-      hasOverall: sorted.length > 0,
-      hasMobile: mobile.length > 0,
+      dailyTop3: b.daily.slice(0, 3),
+      overallTop3: b.overall.slice(0, 3),
+      mobileTop3: b.mobile.slice(0, 3),
+      mobileTop20: b.mobile,
+      classicTop3: b.classic.slice(0, 3),
+      hasDaily: b.daily.length > 0,
+      hasOverall: b.overall.length > 0,
     };
   }, [scores]);
 
@@ -95,7 +78,7 @@ export default function HighScoreList({ onTitleClick }: HighScoreListProps) {
       </div>
 
       <Tabs defaultValue={hasDaily ? "daily" : hasOverall ? "overall" : "mobile"} className="w-full">
-        <TabsList className="w-full grid grid-cols-3 h-10 rounded-xl bg-gray-100 p-1">
+        <TabsList className="w-full grid grid-cols-4 h-10 rounded-xl bg-gray-100 p-1">
           <TabsTrigger value="daily" className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
             Daily
           </TabsTrigger>
@@ -104,6 +87,9 @@ export default function HighScoreList({ onTitleClick }: HighScoreListProps) {
           </TabsTrigger>
           <TabsTrigger value="mobile" className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm">
             Mobile
+          </TabsTrigger>
+          <TabsTrigger value="classic" className="rounded-lg font-display font-bold data-[state=active]:bg-white data-[state=active]:shadow-sm" title="The original 20-level game">
+            Classic
           </TabsTrigger>
         </TabsList>
         <TabsContent value="daily" className="mt-4">
@@ -140,6 +126,20 @@ export default function HighScoreList({ onTitleClick }: HighScoreListProps) {
               onClick={onTitleClick}
               className="w-full flex justify-center pt-3 mt-1 text-gray-400 hover:text-gray-600 active:text-gray-700 transition-colors"
               aria-label="View more mobile scores"
+            >
+              <ChevronDown className="w-5 h-5" />
+            </button>
+          )}
+        </TabsContent>
+        <TabsContent value="classic" className="mt-4">
+          <p className="mb-2 text-center text-xs font-bold text-gray-400">Scores from the original 20-level game</p>
+          <HighScoreListContent scores={classicTop3} showPlaceholders={true} />
+          {onTitleClick && (
+            <button
+              type="button"
+              onClick={onTitleClick}
+              className="w-full flex justify-center pt-3 mt-1 text-gray-400 hover:text-gray-600 active:text-gray-700 transition-colors"
+              aria-label="View more classic scores"
             >
               <ChevronDown className="w-5 h-5" />
             </button>
