@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile, usePortrait } from "@/hooks/use-mobile";
 import { useSound } from "@/contexts/SoundContext";
 import { GhostAtmosphere, GhostPoem } from "@/components/GhostPoem";
 
@@ -206,9 +206,10 @@ function buildSlideshowTimeline(isMobile: boolean): Slide[] {
   return slides;
 }
 
-function useSlideshow(active: boolean, isMobile: boolean) {
-  const slides = useRef<Slide[]>(buildSlideshowTimeline(isMobile));
-  const fadeMs = isMobile ? SLIDESHOW_FADE_MS_MOBILE : SLIDESHOW_FADE_MS;
+/** `portraitSet`: use the portrait (phone) images, shown whole with no zoom; otherwise the landscape set with a slow zoom. */
+function useSlideshow(active: boolean, portraitSet: boolean) {
+  const slides = useRef<Slide[]>(buildSlideshowTimeline(portraitSet));
+  const fadeMs = portraitSet ? SLIDESHOW_FADE_MS_MOBILE : SLIDESHOW_FADE_MS;
   const layerARef = useRef<HTMLDivElement>(null);
   const layerBRef = useRef<HTMLDivElement>(null);
   const imgARef = useRef<HTMLImageElement>(null);
@@ -225,21 +226,21 @@ function useSlideshow(active: boolean, isMobile: boolean) {
   });
   const [isComplete, setIsComplete] = useState(false);
 
-  // Keep timeline in sync with isMobile (ref is only initialized once; update when isMobile changes)
+  // Keep timeline in sync with portraitSet (ref is only initialized once; update when portraitSet changes)
   useEffect(() => {
-    slides.current = buildSlideshowTimeline(isMobile);
+    slides.current = buildSlideshowTimeline(portraitSet);
     const currentIdx = Number(imgARef.current?.dataset.slideIndex ?? -1);
     if (currentIdx >= 0 && currentIdx < slides.current.length) {
       const imgEl = imgARef.current;
       if (imgEl) {
         imgEl.src = slides.current[currentIdx].url;
-        if (isMobile) {
+        if (portraitSet) {
           imgEl.style.transformOrigin = "50% 50%";
           imgEl.style.transform = "scale(1)";
         }
       }
     }
-  }, [isMobile]);
+  }, [portraitSet]);
 
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
@@ -257,7 +258,7 @@ function useSlideshow(active: boolean, isMobile: boolean) {
   /** Zoom progress 0..1; on mobile reaches 1 earlier so the slide ends with image full-screen. */
   const zoomProgress = (slide: Slide, t: number): number => {
     const raw = slideProgress(slide, t);
-    if (isMobile) {
+    if (portraitSet) {
       return clamp(raw / SLIDESHOW_ZOOM_COMPLETE_AT_MOBILE, 0, 1);
     }
     return raw;
@@ -265,7 +266,7 @@ function useSlideshow(active: boolean, isMobile: boolean) {
 
   const applyZoom = (imgEl: HTMLImageElement | null, idx: number, t: number, freezeAtT: number | null) => {
     if (!imgEl) return;
-    if (isMobile || SLIDESHOW_NO_ZOOM_SLIDES.has(idx)) {
+    if (portraitSet || SLIDESHOW_NO_ZOOM_SLIDES.has(idx)) {
       imgEl.style.transformOrigin = "50% 50%";
       imgEl.style.transform = "scale(1)";
       return;
@@ -284,7 +285,7 @@ function useSlideshow(active: boolean, isMobile: boolean) {
     if (imgEl) {
       imgEl.src = slides.current[slideIdx].url;
       imgEl.dataset.slideIndex = String(slideIdx);
-      if (isMobile) {
+      if (portraitSet) {
         imgEl.style.transformOrigin = "50% 50%";
         imgEl.style.transform = "scale(1)";
       }
@@ -301,7 +302,7 @@ function useSlideshow(active: boolean, isMobile: boolean) {
     setLayer("A", idx);
     setOpacity("A", 1);
     setOpacity("B", 0);
-    if (!isMobile) {
+    if (!portraitSet) {
       const tt = t == null ? slides.current[idx].startMs : t;
       applyZoom(imgARef.current, idx, tt, null);
     }
@@ -350,7 +351,7 @@ function useSlideshow(active: boolean, isMobile: boolean) {
       const p = clamp((t - fadeRef.current.startMs) / fadeMs, 0, 1);
       setOpacity("A", 1 - p);
       setOpacity("B", p);
-      if (!isMobile) {
+      if (!portraitSet) {
         const freezeOldT = slides.current[fadeRef.current.fromIdx].endMs;
         const freezeNewT = slides.current[fadeRef.current.toIdx].startMs;
         applyZoom(imgARef.current, fadeRef.current.fromIdx, t, freezeOldT);
@@ -358,7 +359,7 @@ function useSlideshow(active: boolean, isMobile: boolean) {
       }
       return;
     }
-    if (!isMobile) {
+    if (!portraitSet) {
       const idx = nearestSlideIndex(t);
       applyZoom(imgARef.current, idx, t, null);
     }
@@ -449,15 +450,22 @@ function useImagePreloader(slideUrls: string[], phase: Phase, scrollElapsedMs: n
 
 export default function Level20EndingOverlay({ captureDataUrl, forceMobile, onComplete }: Level20EndingOverlayProps) {
   const isMobile = useIsMobile() || forceMobile === true;
+  // The mobile slideshow images are portrait; a landscape screen (tablet or phone on its side)
+  // gets the landscape set, which fills it, instead of a letterboxed portrait strip
+  const portrait = usePortrait();
+  const portraitSlides = isMobile && (portrait || forceMobile === true);
+  // Portrait images are 9:16 with a blurred backdrop above and below the picture: on a screen
+  // wider than that (a portrait tablet) fill it and trim the backdrop; on taller phones show it whole
+  const portraitFit = typeof window !== "undefined" && window.innerWidth / window.innerHeight > 9 / 16 ? "cover" : "contain";
   const [phase, setPhase] = useState<Phase>("glitch");
   const [scrollElapsedMs, setScrollElapsedMs] = useState(0);
   const glitch = useGlitchRandom(phase === "glitch", isMobile);
   const { playAmbient, stopAmbient, setAmbientVolume, playCustomMusic, stopMusic } = useSound();
   const scrollStartRef = useRef<number>(0);
   const slideshowActive = (phase === "scroll" && scrollElapsedMs >= ENDGAME_REVEAL_START_MS) || phase === "endgame";
-  const slideUrls = useMemo(() => buildSlideshowTimeline(isMobile).map((s) => s.url), [isMobile]);
+  const slideUrls = useMemo(() => buildSlideshowTimeline(portraitSlides).map((s) => s.url), [portraitSlides]);
   useImagePreloader(slideUrls, phase, scrollElapsedMs);
-  const slideshow = useSlideshow(slideshowActive, isMobile);
+  const slideshow = useSlideshow(slideshowActive, portraitSlides);
   const [showThanks, setShowThanks] = useState(false);
   const thanksTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -833,7 +841,7 @@ export default function Level20EndingOverlay({ captureDataUrl, forceMobile, onCo
               alt=""
               className="absolute inset-0 w-full h-full"
               style={{
-                objectFit: isMobile ? "contain" : "cover",
+                objectFit: portraitSlides ? portraitFit : "cover",
                 transform: "scale(1)",
                 transformOrigin: "50% 50%",
                 willChange: "transform",
@@ -841,7 +849,7 @@ export default function Level20EndingOverlay({ captureDataUrl, forceMobile, onCo
               onError={(e) => {
                 const img = e.currentTarget;
                 const idx = img.dataset.slideIndex;
-                if (idx != null && isMobile) {
+                if (idx != null && portraitSlides) {
                   img.src = `${ENDGAME_IMAGES_BASE_FALLBACK}${String(Number(idx) + 1).padStart(2, "0")}.webp`.replace(/\/+/g, "/");
                 }
               }}
@@ -857,7 +865,7 @@ export default function Level20EndingOverlay({ captureDataUrl, forceMobile, onCo
               alt=""
               className="absolute inset-0 w-full h-full endgame-slide-img"
               style={{
-                objectFit: isMobile ? "contain" : "cover",
+                objectFit: portraitSlides ? portraitFit : "cover",
                 transform: "scale(1)",
                 transformOrigin: "50% 50%",
                 willChange: "transform",
@@ -865,7 +873,7 @@ export default function Level20EndingOverlay({ captureDataUrl, forceMobile, onCo
               onError={(e) => {
                 const img = e.currentTarget;
                 const idx = img.dataset.slideIndex;
-                if (idx != null && isMobile) {
+                if (idx != null && portraitSlides) {
                   img.src = `${ENDGAME_IMAGES_BASE_FALLBACK}${String(Number(idx) + 1).padStart(2, "0")}.webp`.replace(/\/+/g, "/");
                 }
               }}

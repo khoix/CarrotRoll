@@ -635,7 +635,10 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
         codeToKey[e.code] ?? (e.key === " " ? "space" : ["w", "a", "s", "d"].includes(e.key.toLowerCase()) ? e.key.toLowerCase() : e.key.startsWith("Arrow") ? e.key : null);
       const inField = () => {
         const a = document.activeElement;
-        return a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement;
+        if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) return true;
+        // A dialog or menu is open (e.g. Sound Options): its keys are its own, so Escape closes it
+        // without also un-pausing the game
+        return !!document.querySelector('[role="dialog"], [role="menu"]');
       };
       const down = (e: KeyboardEvent) => {
         if (inField()) return;
