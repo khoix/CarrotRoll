@@ -3,21 +3,17 @@ import { createPortal } from "react-dom";
 import GameCanvas, { GameCanvasHandle } from "@/components/GameCanvas";
 import Level20EndingOverlay from "@/components/Level20EndingOverlay";
 import TouchControls from "@/components/TouchControls";
-import { useSound } from "@/contexts/SoundContext";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Menu, Info, Home, Volume2, VolumeX, Maximize2, Gamepad2 } from "lucide-react";
+import { Menu, Info, Home, SlidersHorizontal, Maximize2, Gamepad2 } from "lucide-react";
+import SoundOptionsDialog from "@/components/SoundOptionsDialog";
 import { useLocation } from "wouter";
 import { useCoarsePointer, useIsMobile } from "@/hooks/use-mobile";
 
@@ -42,24 +38,13 @@ export default function Play() {
   const coarse = useCoarsePointer();
   const gameCanvasRef = useRef<GameCanvasHandle>(null);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
+  const [showSoundOptions, setShowSoundOptions] = useState(false);
   const [gameState, setGameState] = useState<GameState>("menu");
   const [classicControls, setClassicControls] = useState(loadClassic);
   const [isFullscreen, setIsFullscreen] = useState(false);
   /** /play?daily=1 plays today's daily challenge. */
   const [daily] = useState(() => new URLSearchParams(window.location.search).get("daily") === "1");
-  const {
-    muted,
-    masterVolume,
-    musicVolume,
-    sfxVolume,
-    setMuted,
-    setMasterVolume,
-    setMusicVolume,
-    setSfxVolume,
-    stopMusic,
-    resumeMusic,
-    isMusicPlaying,
-  } = useSound();
+
 
   useEffect(() => {
     try {
@@ -108,9 +93,9 @@ export default function Play() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[60] w-64 rounded-xl border-2 border-black shadow-lg">
-            <DropdownMenuItem onClick={() => (isMusicPlaying ? stopMusic() : resumeMusic())} className="flex cursor-pointer items-center gap-2">
-              {isMusicPlaying ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-              {isMusicPlaying ? "Stop Music" : "Start Music"}
+            <DropdownMenuItem onClick={() => setShowSoundOptions(true)} className="flex cursor-pointer items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4" />
+              Sound Options
             </DropdownMenuItem>
             {fullscreenSupported && (
               <DropdownMenuItem onClick={() => gameCanvasRef.current?.toggleFullscreen()} className="flex cursor-pointer items-center gap-2">
@@ -137,28 +122,6 @@ export default function Play() {
               <Info className="h-4 w-4" />
               About
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="font-display">Sound</DropdownMenuLabel>
-            <div className="space-y-4 px-2 py-3" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="play-mute" className="cursor-pointer text-sm font-medium">
-                  Mute all
-                </Label>
-                <Switch id="play-mute" checked={muted} onCheckedChange={setMuted} />
-              </div>
-              {(
-                [
-                  ["Master", masterVolume, setMasterVolume],
-                  ["Music", musicVolume, setMusicVolume],
-                  ["SFX", sfxVolume, setSfxVolume],
-                ] as const
-              ).map(([label, value, set]) => (
-                <div key={label} className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{label}</Label>
-                  <Slider value={[value]} onValueChange={([v]) => set(v)} max={1} min={0} step={0.05} disabled={muted} />
-                </div>
-              ))}
-            </div>
           </DropdownMenuContent>
         </DropdownMenu>
       </GameCanvas>
@@ -177,6 +140,8 @@ export default function Play() {
           <Level20EndingOverlay onComplete={() => gameCanvasRef.current?.showGameOverAfterEnding?.()} />,
           gameCanvasRef.current?.getContainerElement() ?? document.body
         )}
+
+      <SoundOptionsDialog open={showSoundOptions} onOpenChange={setShowSoundOptions} className="z-[70]" />
 
       <Dialog open={showAboutDialog} onOpenChange={setShowAboutDialog}>
         <DialogContent className="z-[70] max-w-2xl rounded-3xl border-4 border-black bg-white p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] md:p-10">

@@ -7,19 +7,15 @@ import TouchControls from "@/components/TouchControls";
 import StartMenuCard from "@/components/StartMenuCard";
 import HighScoreList, { HighScoreListContent } from "@/components/HighScoreList";
 import PowerUpList from "@/components/PowerUpList";
+import SoundOptionsDialog from "@/components/SoundOptionsDialog";
 import { splitLeaderboard, type ScoreRow } from "@/lib/leaderboard";
 import { useScores } from "@/hooks/use-scores";
 import { useSound } from "@/contexts/SoundContext";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -31,7 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Menu, Info, ChevronDown, ChevronRight, Trophy, Sparkles, Volume2, VolumeX, RefreshCw, X } from "lucide-react";
+import { Menu, Info, ChevronDown, ChevronRight, Trophy, Sparkles, SlidersHorizontal, RefreshCw, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLocation } from "wouter";
 
@@ -42,22 +38,7 @@ const PRECACHE_URLS = ["music_menu.m4a"];
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const {
-    muted,
-    masterVolume,
-    musicVolume,
-    sfxVolume,
-    setMuted,
-    setMasterVolume,
-    setMusicVolume,
-    setSfxVolume,
-    setMusicState,
-    unlockAudio,
-    preloadSfx,
-    stopMusic,
-    resumeMusic,
-    isMusicPlaying,
-  } = useSound();
+  const { setMusicState, unlockAudio, preloadSfx } = useSound();
 
   const [showTitleScreen, setShowTitleScreen] = useState(true);
   const [titleAnimating, setTitleAnimating] = useState(false);
@@ -65,6 +46,7 @@ export default function Home() {
   const [cacheDone, setCacheDone] = useState(false);
   const [gameState, setGameState] = useState<GameState>("menu");
   const [showAboutDialog, setShowAboutDialog] = useState(false);
+  const [showSoundOptions, setShowSoundOptions] = useState(false);
   const isMobile = useIsMobile();
   const { data: scores, refetch: refetchScores, isFetching: scoresFetching } = useScores();
   const { challenge: challengeTop20, daily: dailyTop20, overall: overallTop20, mobile: mobileTop20, classic: classicTop20 } = useMemo(
@@ -205,76 +187,14 @@ export default function Home() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64 rounded-xl border-2 border-black shadow-lg">
-                {isMobile && (
-                  <DropdownMenuItem
-                    onClick={() => (isMusicPlaying ? stopMusic() : resumeMusic())}
-                    className="flex items-center gap-2 cursor-pointer"
-                  >
-                    {isMusicPlaying ? (
-                      <Volume2 className="h-4 w-4" />
-                    ) : (
-                      <VolumeX className="h-4 w-4" />
-                    )}
-                    {isMusicPlaying ? "Stop Music" : "Start Music"}
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem onClick={() => setShowSoundOptions(true)} className="flex items-center gap-2 cursor-pointer">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Sound Options
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowAboutDialog(true)} className="flex items-center gap-2 cursor-pointer">
                   <Info className="h-4 w-4" />
                   About
                 </DropdownMenuItem>
-                {!isMobile && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="font-display">Sound</DropdownMenuLabel>
-                    <div
-                      className="px-2 py-3 space-y-4"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <Label htmlFor="mute" className="text-sm font-medium cursor-pointer">Mute all</Label>
-                        <Switch
-                          id="mute"
-                          checked={muted}
-                          onCheckedChange={setMuted}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Master</Label>
-                        <Slider
-                          value={[masterVolume]}
-                          onValueChange={([v]) => setMasterVolume(v)}
-                          max={1}
-                          min={0}
-                          step={0.05}
-                          disabled={muted}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Music</Label>
-                        <Slider
-                          value={[musicVolume]}
-                          onValueChange={([v]) => setMusicVolume(v)}
-                          max={1}
-                          min={0}
-                          step={0.05}
-                          disabled={muted}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">SFX</Label>
-                        <Slider
-                          value={[sfxVolume]}
-                          onValueChange={([v]) => setSfxVolume(v)}
-                          max={1}
-                          min={0}
-                          step={0.05}
-                          disabled={muted}
-                        />
-                      </div>
-                    </div>
-                  </>
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -305,76 +225,14 @@ export default function Home() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64 rounded-xl border-2 border-black shadow-lg">
-                {isMobile && (
-                  <DropdownMenuItem
-                    onClick={() => (isMusicPlaying ? stopMusic() : resumeMusic())}
-                    className="flex items-center gap-2 cursor-pointer"
-                  >
-                    {isMusicPlaying ? (
-                      <Volume2 className="h-4 w-4" />
-                    ) : (
-                      <VolumeX className="h-4 w-4" />
-                    )}
-                    {isMusicPlaying ? "Stop Music" : "Start Music"}
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem onClick={() => setShowSoundOptions(true)} className="flex items-center gap-2 cursor-pointer">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Sound Options
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowAboutDialog(true)} className="flex items-center gap-2 cursor-pointer">
                   <Info className="h-4 w-4" />
                   About
                 </DropdownMenuItem>
-                {!isMobile && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="font-display">Sound</DropdownMenuLabel>
-                    <div
-                      className="px-2 py-3 space-y-4"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <Label htmlFor="mute" className="text-sm font-medium cursor-pointer">Mute all</Label>
-                        <Switch
-                          id="mute"
-                          checked={muted}
-                          onCheckedChange={setMuted}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Master</Label>
-                        <Slider
-                          value={[masterVolume]}
-                          onValueChange={([v]) => setMasterVolume(v)}
-                          max={1}
-                          min={0}
-                          step={0.05}
-                          disabled={muted}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Music</Label>
-                        <Slider
-                          value={[musicVolume]}
-                          onValueChange={([v]) => setMusicVolume(v)}
-                          max={1}
-                          min={0}
-                          step={0.05}
-                          disabled={muted}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">SFX</Label>
-                        <Slider
-                          value={[sfxVolume]}
-                          onValueChange={([v]) => setSfxVolume(v)}
-                          max={1}
-                          min={0}
-                          step={0.05}
-                          disabled={muted}
-                        />
-                      </div>
-                    </div>
-                  </>
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -767,6 +625,8 @@ export default function Home() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <SoundOptionsDialog open={showSoundOptions} onOpenChange={setShowSoundOptions} />
 
       {/* About Dialog Overlay */}
       <Dialog open={showAboutDialog} onOpenChange={setShowAboutDialog}>
