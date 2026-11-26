@@ -1,6 +1,7 @@
 import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { CHALLENGE_DAY_RE } from "./daily";
 
 const deviceEnum = ["mobile", "web", "unknown"] as const;
 export type DeviceType = (typeof deviceEnum)[number];
@@ -14,6 +15,8 @@ export const highScores = pgTable("high_scores", {
   createdAt: timestamp("created_at").defaultNow(),
   /** Leaderboard season. 1 = "Classic" (the 20-level game); new scores get CURRENT_SEASON. */
   season: integer("season").default(1).notNull(),
+  /** Daily challenge day (YYYY-MM-DD, UTC) the score was made on; null for normal runs. */
+  challenge: text("challenge"),
 });
 
 /** Scores submitted now belong to this season; older seasons stay viewable. */
@@ -52,6 +55,7 @@ const baseInsertSchema = createInsertSchema(highScores).omit({
 export const insertHighScoreSchema = baseInsertSchema.extend({
   name: nameSchema,
   device: z.enum(deviceEnum).optional().default("unknown"),
+  challenge: z.string().regex(CHALLENGE_DAY_RE, "Invalid challenge day").nullish(),
 });
 
 /** Validate name for client/server; returns error message or undefined if valid. */

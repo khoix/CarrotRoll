@@ -12,7 +12,8 @@ Created by Nya.
 - Full-screen mobile play in portrait or landscape: drag anywhere to fly, blasters auto-fire
 - Installable as a home-screen web app (true full screen on iPhone)
 - Sound effects and in-game music (one Web Audio mixer, so volume/mute work on iOS too)
-- Leaderboard with seasons: the current season's Daily / Overall / Mobile boards, and the original 20-level game's scores kept under "Classic"
+- Daily challenge: one seed per UTC day, so everyone plays the same levels, with its own 🎯 leaderboard tab
+- Leaderboard with seasons: the current season's Today / Overall / Mobile boards, and the original 20-level game's scores kept under "Classic"
 - Admin tools for score management and ending demos
 
 ## Tech stack
@@ -53,11 +54,13 @@ Optional environment variables:
 | `ADMIN_PASSWORD` | Initial admin password (first run) | `password` |
 | `VITE_BASE_URL` | Public base path for assets/routes | `/` in dev, `/carrotroll/` in production |
 
-### Database note (seasons)
+### Database note (seasons and daily challenge)
 
-Scores now carry a `season` (1 = Classic). With Postgres, run `npm run db:push` once after
-deploying this version to add the column; existing rows become Classic. File storage
-(`data/scores.json`) needs nothing: scores without a season are read as Classic.
+Scores carry a `season` (1 = Classic) and a nullable `challenge` day (`YYYY-MM-DD`, UTC) for
+daily challenge runs. With Postgres, run `npm run db:push` once after deploying to add any
+missing column; existing rows become Classic, normal runs. File storage (`data/scores.json`)
+needs nothing. The server accepts challenge scores only for today or yesterday (UTC), so a run
+started just before midnight still counts; challenge scores stay off the normal boards.
 
 ### Web preview (GitHub Pages)
 
@@ -90,6 +93,7 @@ Collect 10 carrots to level up. Avoid the giant carrot, broccoli, spiky balls an
 | `npm start` | Run production build |
 | `npm run check` | Typecheck with `tsc` |
 | `npm run sim` | Balance simulator: plays hundreds of seeded games with bots (`-- --runs 200 --world mobile --compare script/sim-baseline.json`) |
+| `npm run check:daily` | Checks that a daily challenge seed gives the same levels whatever the player does |
 | `npm run generate-sounds` | Fill in any missing sounds with placeholders (never overwrites real ones) |
 | `npm run optimize-assets` | Re-encode masters in `assets-src/` into web assets (needs `ffmpeg`) |
 | `npm run db:push` | Push Drizzle schema |

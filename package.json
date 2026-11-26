@@ -11,7 +11,8 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "sim": "tsx script/sim.ts",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "check:daily": "tsx script/check-daily.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -1,3 +1,4 @@
+import { isOpenChallengeDay } from "@shared/daily";
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { randomBytes } from "crypto";
@@ -40,6 +41,9 @@ export async function registerRoutes(
         return res.status(400).json({
           message: "Name contains inappropriate language.",
         });
+      }
+      if (input.challenge && !isOpenChallengeDay(input.challenge)) {
+        return res.status(400).json({ message: "That daily challenge has closed." });
       }
       const score = await storage.createScore(input);
       res.status(201).json(score);

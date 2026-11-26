@@ -215,8 +215,14 @@ export class GameEngine {
   /** Simulation clock in ms (stops while paused). */
   time = 0;
   private acc = 0;
-  /** All gameplay randomness comes from here (seeded per game). */
+  /**
+   * Level content (spawns, positions, boss patterns) comes from `rng`, reseeded from the game's
+   * seed at the start of every level and consumed the same way every step whatever the player
+   * does, so a given seed gives every player the same levels (the daily challenge relies on it).
+   * Player-driven randomness (particles, faces, heart drops, Carrot Rain) uses `fx` instead.
+   */
   rng: Rng = mulberry32(randomSeed());
+  fx: Rng = mulberry32(randomSeed());
   seed = 0;
   /** Item ids already seen on this device (the host loads and saves it). */
   seenItems = new Set<string>();
@@ -335,6 +341,7 @@ export class GameEngine {
   start(initialLevel = 1, seed = randomSeed()) {
     this.seed = seed >>> 0;
     this.rng = mulberry32(this.seed);
+    this.fx = mulberry32((this.seed ^ 0x85ebca6b) >>> 0);
     this.player = newPlayer(this.W, this.H);
     this.player.speed = this.baseSpeed;
     this.strikes = [];
@@ -352,7 +359,7 @@ export class GameEngine {
     this.particles = [];
     this.popups = [];
     this.sparkleTrail = [];
-    this.giantCarrot = { x: 0, y: this.H + 180, width: this.W, height: 200, angle: 0, nextShot: 0, face: Math.floor(this.rng() * 6) };
+    this.giantCarrot = { x: 0, y: this.H + 180, width: this.W, height: 200, angle: 0, nextShot: 0, face: Math.floor(this.fx() * 6) };
     this.score = 0;
     this.level = initialLevel;
     this.carrots = 0;
@@ -378,6 +385,8 @@ export class GameEngine {
 
   /** Per-level setup: queue the guaranteed early spawn of anything that unlocks here. */
   private beginLevel(startTime: number) {
+    // Same seed + same level = same level content, however long it took to get here
+    this.rng = mulberry32((this.seed ^ Math.imul(this.level + 1, 0x9e3779b1)) >>> 0);
     this.bombThisLevel = false;
     this.pendingUnlocks = itemsUnlockingAt(this.level);
     this.nextUnlockSpawn = startTime + 3000;
@@ -468,7 +477,7 @@ export class GameEngine {
       vx: 0,
       vy: this.fallSpeed,
       active: true,
-      ...(isCarrot && { face: type === "carrot_rotten" ? 1 : Math.floor(this.rng() * 6) }),
+      ...(isCarrot && { face: type === "carrot_rotten" ? 1 : Math.floor(this.fx() * 6) }),
     });
   }
 
@@ -729,14 +738,18 @@ export class GameEngine {
     // Carrot Rain: a shower of carrots and no new hazards
     if (p.rainTimer > 0) {
       if (t >= this.rainNextCarrot) {
-        this.spawnCollectible("carrot");
+        this.spawnCollectible("carrot", this.fx(), this.fx());
         this.rainNextCarrot = t + 150;
       }
     }
     // Spiky balls (and, from tier 2, chestnut burrs)
-    if (p.rainTimer <= 0 && this.rng() < perStep(diff.ballChance * (this.boss ? 0.4 : 1), dt, Math.sqrt(this.widthScale))) {
-      const burr = this.rng() < hazardRate(this.level, (r) => r.burrShare);
-      this.obstacles.push({ x: this.rng() * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: burr ? "burr" : "ball", vx: 0, vy: fall, active: true, hp: burr ? 1 : undefined });
+    // (rolls are always drawn, so the level's random sequence never depends on the player)
+    const ballRoll = this.rng();
+    const burrRoll = this.rng();
+    const ballX = this.rng();
+    if (p.rainTimer <= 0 && ballRoll < perStep(diff.ballChance * (this.boss ? 0.4 : 1), dt, Math.sqrt(this.widthScale))) {
+      const burr = burrRoll < hazardRate(this.level, (r) => r.burrShare);
+      this.obstacles.push({ x: ballX * (W - 40), y: -40 - fall * BALL_TELEGRAPH_S, width: 40, height: 40, type: burr ? "burr" : "ball", vx: 0, vy: fall, active: true, hp: burr ? 1 : undefined });
     }
     this.updateTierHazards(dt, t, p.rainTimer <= 0, this.boss ? 0.4 : 1);
 
@@ -748,17 +761,22 @@ export class GameEngine {
 
     // Collectibles
     // Collectibles arrive at the same rate on every screen shape (narrow phones aren't starved of carrots)
-    if (this.collectibles.length < diff.collectibleCap && this.rng() < perStep(0.02, dt, Math.pow(this.widthScale, 0.25))) {
-      let pick = pickCollectible(this.level, this.rng);
+    const spawnRoll = this.rng();
+    let pick = pickCollectible(this.level, this.rng);
+    const bossRollA = this.rng();
+    const bossRollB = this.rng();
+    const spawnX = this.rng();
+    const spawnFace = this.rng();
+    if (this.collectibles.length < diff.collectibleCap && spawnRoll < perStep(0.02, dt, Math.pow(this.widthScale, 0.25))) {
       if (this.boss) {
         // Boss fights: no carrots; power-ups still drop now and then
-        if (pick.startsWith("carrot") || pick === "powerup_rain") pick = this.rng() < 0.35 ? "powerup_blaster" : "powerup_invincible";
-        if (this.rng() > 0.35) pick = "carrot_none" as CollectibleType;
+        if (pick.startsWith("carrot") || pick === "powerup_rain") pick = bossRollA < 0.35 ? "powerup_blaster" : "powerup_invincible";
+        if (bossRollB > 0.35) pick = "carrot_none" as CollectibleType;
       }
       if (pick === "powerup_bomb" && this.bombThisLevel) pick = "carrot"; // one bomb per level at most
       if (pick === "powerup_slowmo" && p.slowTimer > 0) pick = "carrot";
       if (pick === "powerup_bomb") this.bombThisLevel = true;
-      if ((pick as string) !== "carrot_none") this.spawnCollectible(pick);
+      if ((pick as string) !== "carrot_none") this.spawnCollectible(pick, spawnX, spawnFace);
     }
 
     // Move entities
@@ -880,7 +898,7 @@ export class GameEngine {
             this.obstacles.push({ x: ex - 12, y: ey - 12, width: 24, height: 24, type: "burr_small", vx: Math.cos(a) * v, vy: Math.sin(a) * v, active: true });
           }
         }
-        if (this.rng() < 0.1) {
+        if (this.fx() < 0.1) {
           this.collectibles.push({ x: ball.x, y: ball.y, width: 30, height: 30, type: "powerup_heart", vx: 0, vy: fall, active: true });
         }
         for (const other of obs) {
@@ -976,7 +994,7 @@ export class GameEngine {
       if (p.reflectTimer > 0 && REFLECTABLE.has(o.type)) {
         // Broccoli Reflector: send it back down at the giant carrot
         const v = Math.max(300 * this.vScale, Math.hypot(o.vx, o.vy));
-        const tx = this.W / 2 + (this.rng() - 0.5) * this.W * 0.6;
+        const tx = this.W / 2 + (this.fx() - 0.5) * this.W * 0.6;
         const ang = Math.atan2(this.giantCarrot.y + 40 - (o.y + o.height / 2), tx - (o.x + o.width / 2));
         o.vx = Math.cos(ang) * v;
         o.vy = Math.sin(ang) * v;
@@ -1075,25 +1093,25 @@ export class GameEngine {
         case "powerup_invincible":
           this.events.sfx("powerup_shield");
           p.shieldTimer = 5.0;
-          this.giantCarrot.face = Math.floor(this.rng() * 6);
+          this.giantCarrot.face = Math.floor(this.fx() * 6);
           break;
         case "powerup_speed":
           this.events.sfx("powerup_speed");
           p.speedBoostTimer = 5.0;
           p.speed = this.baseSpeed * 1.5;
           this.setLoop("rapid_rabbit_loop", true);
-          this.giantCarrot.face = Math.floor(this.rng() * 6);
+          this.giantCarrot.face = Math.floor(this.fx() * 6);
           break;
         case "powerup_blaster":
           this.events.sfx("powerup_speed");
           p.blasterTimer = 10.0;
-          this.giantCarrot.face = Math.floor(this.rng() * 6);
+          this.giantCarrot.face = Math.floor(this.fx() * 6);
           break;
         case "powerup_attract":
           this.events.sfx("powerup_attract");
           p.attractTimer = 6.0;
           this.setLoop("attract_loop", true);
-          this.giantCarrot.face = Math.floor(this.rng() * 6);
+          this.giantCarrot.face = Math.floor(this.fx() * 6);
           break;
         case "powerup_decoy":
           this.events.sfx("powerup_decoy");
@@ -1416,7 +1434,7 @@ export class GameEngine {
     this.comboChain = 0;
     this.shake = 260;
     this.shakeStrength = 7;
-    this.giantCarrot.face = Math.floor(this.rng() * 6);
+    this.giantCarrot.face = Math.floor(this.fx() * 6);
     this.burst(p.x + p.width / 2, p.y + p.height / 2, 14, ["#ffffff", "#93c5fd", "#fca5a5"], 220);
     const wasMax = this.lives >= MAX_HEARTS;
     this.lives -= 1;
@@ -1443,7 +1461,10 @@ export class GameEngine {
     const W = this.W;
     const vS = this.vScale;
     const fall = this.fallSpeed;
-    const chance = (rate: number) => allowSpawns && rate > 0 && this.rng() < 1 - Math.exp(-rate * rateScale * dt);
+    const chance = (rate: number) => {
+      const roll = this.rng(); // always drawn (see updatePlaying)
+      return allowSpawns && rate > 0 && roll < 1 - Math.exp(-rate * rateScale * dt);
+    };
 
     // Brussels sprouts burst into three small sprouts shortly after leaving the carrot
     for (const o of this.projectiles) {
@@ -1572,10 +1593,10 @@ export class GameEngine {
   }
 
   /** Spawn a collectible at the top; announces items the device hasn't seen before. */
-  private spawnCollectible(type: CollectibleType) {
+  private spawnCollectible(type: CollectibleType, xRoll = this.rng(), faceRoll = this.rng()) {
     const size = type === "carrot" ? 40 : 30;
     this.collectibles.push({
-      x: this.rng() * (this.W - (type === "carrot" ? 50 : 40)),
+      x: xRoll * (this.W - (type === "carrot" ? 50 : 40)),
       y: -50,
       width: size,
       height: size,
@@ -1583,7 +1604,7 @@ export class GameEngine {
       vx: 0,
       vy: this.fallSpeed,
       active: true,
-      ...(type !== "carrot_rotten" && type.startsWith("carrot") && { face: Math.floor(this.rng() * 6) }),
+      ...(type !== "carrot_rotten" && type.startsWith("carrot") && { face: Math.floor(faceRoll * 6) }),
       ...(type === "carrot_rotten" && { face: 1 }),
     });
     const item = introForEntity(type);
@@ -1615,13 +1636,13 @@ export class GameEngine {
     this.level += 1;
     this.carrots = 0;
     this.beginLevel(this.time);
-    this.giantCarrot.face = Math.floor(this.rng() * 6);
+    this.giantCarrot.face = Math.floor(this.fx() * 6);
     // In-canvas celebration (replaces the full-page DOM confetti)
     const colors = ["#f97316", "#22c55e", "#3b82f6", "#eab308", "#ec4899", "#ffffff"];
     for (let i = 0; i < 70; i++) {
-      const a = -Math.PI / 2 + (this.rng() - 0.5) * 1.6;
-      const sp = 300 + this.rng() * 450;
-      this.particles.push({ x: this.W / 2 + (this.rng() - 0.5) * 80, y: this.H * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 1.2 + this.rng() * 0.6, size: 3 + this.rng() * 3, color: colors[i % colors.length], gravity: 700 });
+      const a = -Math.PI / 2 + (this.fx() - 0.5) * 1.6;
+      const sp = 300 + this.fx() * 450;
+      this.particles.push({ x: this.W / 2 + (this.fx() - 0.5) * 80, y: this.H * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 1.2 + this.fx() * 0.6, size: 3 + this.fx() * 3, color: colors[i % colors.length], gravity: 700 });
     }
     this.pushPopup({ x: this.W / 2, y: this.H * 0.35, text: `LEVEL ${this.level}!`, start: this.time, color: "#f97316", big: true });
   }
@@ -1646,9 +1667,9 @@ export class GameEngine {
 
   private burst(x: number, y: number, n: number, colors: string[], speed: number) {
     for (let i = 0; i < n; i++) {
-      const a = this.rng() * Math.PI * 2;
-      const sp = speed * (0.35 + this.rng() * 0.65);
-      this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.35 + this.rng() * 0.35, size: 2 + this.rng() * 2.5, color: colors[i % colors.length], gravity: 0 });
+      const a = this.fx() * Math.PI * 2;
+      const sp = speed * (0.35 + this.fx() * 0.65);
+      this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.35 + this.fx() * 0.35, size: 2 + this.fx() * 2.5, color: colors[i % colors.length], gravity: 0 });
     }
     if (this.particles.length > 400) this.particles.splice(0, this.particles.length - 400);
   }

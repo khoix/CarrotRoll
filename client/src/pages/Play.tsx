@@ -45,6 +45,8 @@ export default function Play() {
   const [gameState, setGameState] = useState<GameState>("menu");
   const [classicControls, setClassicControls] = useState(loadClassic);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /** /play?daily=1 plays today's daily challenge. */
+  const [daily] = useState(() => new URLSearchParams(window.location.search).get("daily") === "1");
   const {
     muted,
     masterVolume,
@@ -90,6 +92,7 @@ export default function Play() {
         autoStart
         startGate
         fillViewport
+        daily={daily}
         onStateChange={setGameState}
         onReturnToMenu={goToMainMenu}
       >

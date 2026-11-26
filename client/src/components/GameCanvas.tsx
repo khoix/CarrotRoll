@@ -23,6 +23,7 @@ import { BackgroundScroller } from "@/lib/BackgroundScroller";
 import { useIsMobile, useCoarsePointer } from "@/hooks/use-mobile";
 import StartMenuCard from "@/components/StartMenuCard";
 import { validateName } from "@shared/schema";
+import { dailySeed, utcDay } from "@shared/daily";
 import { BASE_H, BASE_W, GameEngine, type HudState, type Phase, type SpawnableType } from "@/game/engine";
 import { TIERS, type TierTheme } from "@/game/tiers";
 import { Renderer, type Quality } from "@/game/render";
@@ -115,6 +116,8 @@ interface GameCanvasProps {
   portraitAspect?: boolean;
   onReturnToMenu?: () => void;
   initialLevel?: number;
+  /** Auto-start / gate start plays today's daily challenge instead of a normal run. */
+  daily?: boolean;
   /** Demo/sandbox: no damage from hazards or the giant carrot. */
   damageDisabled?: boolean;
   /** Called on the first key/touch that unlocks audio (demo pages use it to start preload + music). */
@@ -148,6 +151,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
       fillViewport = false,
       onReturnToMenu,
       initialLevel = 1,
+      daily = false,
       damageDisabled = false,
       onSoundUnlock,
       children,
@@ -174,6 +178,8 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     const [gateOpen, setGateOpen] = useState(autoStart && startGate);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [playerName, setPlayerName] = useState("");
+    /** The daily challenge day (YYYY-MM-DD) of the current run, or null for a normal run. */
+    const [challengeDay, setChallengeDay] = useState<string | null>(null);
     const [nameError, setNameError] = useState("");
     const nameErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -274,13 +280,24 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     }, [setPaused]);
 
     // --- Start / menu ---
-    const startGame = useCallback(() => {
-      unlockAudio();
-      playSfx("start");
-      setMusicState("playing");
-      setGateOpen(false);
-      engine.start(initialLevel);
-    }, [unlockAudio, playSfx, setMusicState, engine, initialLevel]);
+    /** Start a run: a normal one, or today's daily challenge (same seed for everyone, from level 1). */
+    const startGame = useCallback(
+      (asDaily: boolean = daily) => {
+        unlockAudio();
+        playSfx("start");
+        setMusicState("playing");
+        setGateOpen(false);
+        if (asDaily) {
+          const day = utcDay();
+          setChallengeDay(day);
+          engine.start(1, dailySeed(day));
+        } else {
+          setChallengeDay(null);
+          engine.start(initialLevel);
+        }
+      },
+      [unlockAudio, playSfx, setMusicState, engine, initialLevel, daily]
+    );
     const startGameRef = useRef(startGame);
     startGameRef.current = startGame;
 
@@ -746,7 +763,13 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
       }
       playSfx("ui_click");
       try {
-        await createScore.mutateAsync({ name: trimmed, score: hud.score, level: hud.level, device: isMobile ? "mobile" : "web" });
+        await createScore.mutateAsync({
+          name: trimmed,
+          score: hud.score,
+          level: hud.level,
+          device: isMobile ? "mobile" : "web",
+          challenge: challengeDay,
+        });
         goToMenu();
         onReturnToMenu?.();
       } catch (err) {
@@ -800,6 +823,11 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
                 )}
               </div>
               <div className="flex">
+                {challengeDay && (
+                  <div className="game-hud-pill text-purple-600" aria-label="Daily challenge">
+                    🎯
+                  </div>
+                )}
                 <div className="game-hud-pill">LEVEL {hud.level}</div>
                 <div className="game-hud-pill text-blue-600">SCORE: {hud.score}</div>
               </div>
@@ -854,6 +882,11 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
               aria-label="Tap to start"
             >
               <span className="text-6xl tracking-wide drop-shadow-[0_4px_0_rgba(0,0,0,0.6)]" style={{ fontFamily: "var(--font-display)" }}>🥕 Carrot Roll</span>
+              {daily && (
+                <span className="rounded-full bg-purple-600/90 px-4 py-1 text-xl tracking-wide" style={{ fontFamily: "var(--font-display)" }}>
+                  🎯 Daily Challenge
+                </span>
+              )}
               <span className="text-3xl animate-pulse" style={{ fontFamily: "var(--font-display)" }}>{coarse ? "Tap to start" : "Click or press Space"}</span>
               {coarse && (
                 <span className="max-w-xs px-6 text-center text-base font-medium text-white/85">
@@ -911,7 +944,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 p-8"
             >
-              <StartMenuCard onStartClick={startGame} />
+              <StartMenuCard onStartClick={() => startGame(false)} onDailyClick={() => startGame(true)} />
             </motion.div>
           )}
 
@@ -924,7 +957,8 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
               className="absolute inset-0 z-10 flex items-center justify-center bg-black/70 p-4"
             >
               <div className="gameover-card w-full max-w-md rounded-3xl border-4 border-black bg-white p-8 text-center shadow-[8px_8px_0px_0px_rgba(255,0,0,1)]">
-                <h2 className="mb-4 font-display text-5xl text-red-500 text-shadow-lg">GAME OVER</h2>
+                <h2 className={`font-display text-5xl text-red-500 text-shadow-lg ${challengeDay ? "mb-1" : "mb-4"}`}>GAME OVER</h2>
+                {challengeDay && <p className="mb-4 font-display text-lg text-purple-600">🎯 Daily Challenge · {challengeDay}</p>}
                 <div className="mb-6 rounded-xl border-2 border-gray-200 bg-gray-100 p-6">
                   <div className="mb-2 flex items-end justify-between border-b-2 border-gray-200 pb-2">
                     <span className="text-xs font-bold uppercase text-gray-500">Final Score</span>
