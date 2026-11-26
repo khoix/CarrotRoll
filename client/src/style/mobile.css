@@ -1,4 +1,5 @@
-/* Mobile-only styles (viewport < 768px). Breakpoint matches use-mobile.tsx. */
+/* Mobile-layout styles: narrow viewports (< 768px) and touch-first devices such as tablets.
+   Keep this query in step with useIsMobile in hooks/use-mobile.tsx. */
 /* Play page: lock page scroll at every size (the game fills the viewport on touch devices) */
 body:has(.play-page) {
   overflow: hidden !important;
@@ -9,7 +10,7 @@ body:has(.play-page) {
   overscroll-behavior: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) and (hover: none) {
   /* Title screen: larger carrot icon in logo (container size unchanged) */
   .title-screen-logo-icon {
     font-size: 3rem;

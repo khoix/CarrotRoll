@@ -163,7 +163,7 @@ export default function Home() {
       {/* Header: fixed with shadow/border on mobile, in-flow on desktop */}
       {isMobile ? (
       <div className="fixed top-0 left-0 right-0 z-10 bg-orange-50/95 backdrop-blur-sm border-b-2 border-gray-300 shadow-[0_4px_12px_rgba(0,0,0,0.12)] pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
-        <header className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex justify-between items-center w-full">
+        <header className="max-w-2xl mx-auto px-4 md:px-8 py-4 flex justify-between items-center w-full">
           <div className="flex items-center gap-2">
              <div className="w-12 h-12 bg-primary rounded-xl rotate-3 flex items-center justify-center shadow-lg border-2 border-black overflow-visible">
                 <span className="text-2xl menu-carrot-icon">🥕</span>
@@ -354,7 +354,8 @@ export default function Home() {
           gameCanvasRef.current?.getContainerElement() ?? document.body
         )}
 
-      <div className={`flex-1 min-h-0 max-w-7xl mx-auto w-full ${isMobile ? "pt-[0.5rem] px-4 md:px-8 flex flex-col overflow-y-auto" : "grid grid-cols-1 lg:grid-cols-[1fr_350px]"} gap-6`}>
+      {/* Mobile layout (phones and tablets): one column, capped so it doesn't stretch across a tablet */}
+      <div className={`flex-1 min-h-0 mx-auto w-full ${isMobile ? "max-w-2xl pt-[0.5rem] px-4 md:px-8 flex flex-col overflow-y-auto" : "max-w-7xl grid grid-cols-1 lg:grid-cols-[1fr_350px]"} gap-6`}>
         {/* Game Area: desktop only (canvas); mobile shows only sidebar with Start Game + Leaderboard + Power-ups) */}
         {!isMobile && (
           <div ref={canvasColumnRef} className="flex flex-col items-center gap-2 min-h-0">
