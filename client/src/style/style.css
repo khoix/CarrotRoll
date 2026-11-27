@@ -180,6 +180,24 @@
   top: calc(env(safe-area-inset-top, 0px) + 3.4rem);
   right: calc(env(safe-area-inset-right, 0px) + 0.6rem);
 }
+/* Pause button in a corner chosen in Settings (top-right stays in .game-controls) */
+.game-pause-corner--top-left {
+  top: calc(env(safe-area-inset-top, 0px) + 3.4rem);
+  left: calc(env(safe-area-inset-left, 0px) + 0.6rem);
+}
+.game-pause-corner--bottom-left {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+  left: calc(env(safe-area-inset-left, 0px) + 0.6rem);
+}
+.game-pause-corner--bottom-right {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+  right: calc(env(safe-area-inset-right, 0px) + 0.6rem);
+}
+/* Embedded desktop game: keep clear of the full-screen button in the bottom-right corner */
+.game-pause-corner--bottom-right.game-pause-corner--beside-fs {
+  bottom: 1rem;
+  right: 4rem;
+}
 .game-control-btn,
 .game-controls button {
   width: 2.5rem;
