@@ -8,6 +8,7 @@ import StartMenuCard from "@/components/StartMenuCard";
 import HighScoreList, { HighScoreListContent } from "@/components/HighScoreList";
 import PowerUpList from "@/components/PowerUpList";
 import SoundOptionsDialog from "@/components/SoundOptionsDialog";
+import SettingsDialog from "@/components/SettingsDialog";
 import { splitLeaderboard, type ScoreRow } from "@/lib/leaderboard";
 import { useScores } from "@/hooks/use-scores";
 import { useSound } from "@/contexts/SoundContext";
@@ -27,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Menu, Info, ChevronDown, ChevronRight, Trophy, Sparkles, SlidersHorizontal, RefreshCw, X } from "lucide-react";
+import { Menu, Info, ChevronDown, ChevronRight, Trophy, Sparkles, SlidersHorizontal, Settings as SettingsIcon, RefreshCw, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLocation } from "wouter";
 
@@ -47,6 +48,7 @@ export default function Home() {
   const [gameState, setGameState] = useState<GameState>("menu");
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [showSoundOptions, setShowSoundOptions] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const isMobile = useIsMobile();
   const { data: scores, refetch: refetchScores, isFetching: scoresFetching } = useScores();
   const { challenge: challengeTop20, daily: dailyTop20, overall: overallTop20, mobile: mobileTop20, classic: classicTop20 } = useMemo(
@@ -191,6 +193,10 @@ export default function Home() {
                   <SlidersHorizontal className="h-4 w-4" />
                   Sound Options
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowSettings(true)} className="flex items-center gap-2 cursor-pointer">
+                  <SettingsIcon className="h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowAboutDialog(true)} className="flex items-center gap-2 cursor-pointer">
                   <Info className="h-4 w-4" />
                   About
@@ -228,6 +234,10 @@ export default function Home() {
                 <DropdownMenuItem onClick={() => setShowSoundOptions(true)} className="flex items-center gap-2 cursor-pointer">
                   <SlidersHorizontal className="h-4 w-4" />
                   Sound Options
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowSettings(true)} className="flex items-center gap-2 cursor-pointer">
+                  <SettingsIcon className="h-4 w-4" />
+                  Settings
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowAboutDialog(true)} className="flex items-center gap-2 cursor-pointer">
                   <Info className="h-4 w-4" />
@@ -628,6 +638,7 @@ export default function Home() {
       </AnimatePresence>
 
       <SoundOptionsDialog open={showSoundOptions} onOpenChange={setShowSoundOptions} />
+      <SettingsDialog open={showSettings} onOpenChange={setShowSettings} />
 
       {/* About Dialog Overlay */}
       <Dialog open={showAboutDialog} onOpenChange={setShowAboutDialog}>

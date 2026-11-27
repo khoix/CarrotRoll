@@ -12,8 +12,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Menu, Info, Home, SlidersHorizontal, Maximize2, Gamepad2 } from "lucide-react";
+import { Menu, Info, Home, SlidersHorizontal, Settings as SettingsIcon, Maximize2, Gamepad2 } from "lucide-react";
 import SoundOptionsDialog from "@/components/SoundOptionsDialog";
+import SettingsDialog from "@/components/SettingsDialog";
 import { useLocation } from "wouter";
 import { useCoarsePointer, useIsMobile } from "@/hooks/use-mobile";
 
@@ -39,6 +40,7 @@ export default function Play() {
   const gameCanvasRef = useRef<GameCanvasHandle>(null);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [showSoundOptions, setShowSoundOptions] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [gameState, setGameState] = useState<GameState>("menu");
   const [classicControls, setClassicControls] = useState(loadClassic);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -97,6 +99,10 @@ export default function Play() {
               <SlidersHorizontal className="h-4 w-4" />
               Sound Options
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowSettings(true)} className="flex cursor-pointer items-center gap-2">
+              <SettingsIcon className="h-4 w-4" />
+              Settings
+            </DropdownMenuItem>
             {fullscreenSupported && (
               <DropdownMenuItem onClick={() => gameCanvasRef.current?.toggleFullscreen()} className="flex cursor-pointer items-center gap-2">
                 <Maximize2 className="h-4 w-4" />
@@ -142,6 +148,7 @@ export default function Play() {
         )}
 
       <SoundOptionsDialog open={showSoundOptions} onOpenChange={setShowSoundOptions} className="z-[70]" />
+      <SettingsDialog open={showSettings} onOpenChange={setShowSettings} className="z-[70]" />
 
       <Dialog open={showAboutDialog} onOpenChange={setShowAboutDialog}>
         <DialogContent className="z-[70] max-w-2xl rounded-3xl border-4 border-black bg-white p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] md:p-10">

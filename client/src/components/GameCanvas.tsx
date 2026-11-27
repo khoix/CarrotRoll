@@ -30,6 +30,7 @@ import { Renderer, type Quality } from "@/game/render";
 import { attachDragControls } from "@/game/input";
 import { GameBanner, useBannerQueue } from "@/components/GameBanners";
 import BossTally from "@/components/BossTally";
+import { useSettings } from "@/lib/settings";
 
 const SEEN_KEY = "carrotroll_seen_items";
 function loadSeen(): string[] {
@@ -187,6 +188,7 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
     const nameErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const createScore = useCreateScore();
+    const { pauseCorner } = useSettings();
     const sound = useSound();
     const { playSfx, playAmbient, stopAmbient, setMusicState, stopMusic, pauseMusic, resumeMusic, unlockAudio } = sound;
 
@@ -847,9 +849,10 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
           )}
         </div>
 
-        {/* Controls (pause + host extras such as the play page's menu), below the HUD on the right */}
-        <div className="game-controls absolute z-30 flex gap-2" data-no-drag>
-          {isActive && !paused && (
+        {/* Controls (pause + host extras such as the play page's menu), below the HUD on the right.
+            The pause button sits here by default, or in the corner chosen in Settings. */}
+        {(() => {
+          const pauseBtn = isActive && !paused && (
             <Button
               {...({
                 type: "button",
@@ -861,9 +864,23 @@ const GameCanvas = forwardRef<GameCanvasHandle, GameCanvasProps>(
                 children: <Pause className="h-5 w-5" />,
               } as ButtonProps)}
             />
-          )}
-          {children}
-        </div>
+          );
+          const own = pauseCorner !== "top-right";
+          const besideFullscreen = pauseCorner === "bottom-right" && !fillViewport && fullscreenSupported;
+          return (
+            <>
+              <div className="game-controls absolute z-30 flex gap-2" data-no-drag>
+                {!own && pauseBtn}
+                {children}
+              </div>
+              {own && pauseBtn && (
+                <div className={`game-pause-corner game-pause-corner--${pauseCorner} ${besideFullscreen ? "game-pause-corner--beside-fs" : ""} absolute z-30`} data-no-drag>
+                  {pauseBtn}
+                </div>
+              )}
+            </>
+          );
+        })()}
         {isActive && <BossTally info={intermission} onCounted={() => playSfx("combo_up")} />}
         {isActive && !paused && !intermission && <GameBanner banner={banners.current} />}
         {!fillViewport && fullscreenSupported && (
